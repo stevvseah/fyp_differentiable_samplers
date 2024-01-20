@@ -2,10 +2,11 @@
 
 from absl.testing import absltest
 from absl.testing import parameterized
-from new_aft_stuff.utils import smc_utils as su
+from annealed_flow_transport.utils import smc_utils as su
 import chex
 import jax
 import jax.numpy as jnp
+from jax.scipy.stats import norm
 
 def _assert_equal_vec(tester: parameterized.TestCase, 
                       vec1: jax.Array, vec2: jax.Array, **kwargs):
@@ -146,16 +147,69 @@ class ResamplingTest(parameterized.TestCase):
     self.assertSequenceAlmostEqual(test_log_weights, log_weights)
     self.assertSequenceAlmostEqual(test_uniform_log_weights, uniform_log_weights)
 
-class SampleUpdateTest(parameterized.TestCase):
-  """"""
+class UpdatesTest(parameterized.TestCase):
+  """Tests for weight update functionalities of smc_utils."""
 
   @parameterized.parameters(
-
+    (1, 0.1, 0., -1., 2., 1., 1., 4., 5.),
+    (5, -2., -1.5, 1., 3., 0.5, 0.5, 1., 1.2)
   )
-  def test_estimate_free_energy(self, key, )
+  def test_estimate_free_energy(self, seed:int, 
+                                mean_a:float, mean_b:float, mean_c:float, mean_d:float, 
+                                var_a:float, var_b:float, var_c:float, var_d:float):
+    """Tests if estimate_free_energy correctly computes the KL-divergence between the 
+    distribution of the transported particles and the current bridging distribution.
 
+    Let A, B, C and D be Gaussian distributions.
 
+    This test draws particles from A, and generates log importance weights such that 
+    the weighted particles approximate B. A flow transporting the particles from B to 
+    C is then applied. We set the current bridging distribution to D, so that the output
+    of estimate_free_energy is the KL divergence D_KL(C||D). This can be computed 
+    analytically, so we check whether the estimate provided by estimate_free_energy 
+    is close (within +-0.1) to the true value of the KL divergence.
 
+    Parameters
+    ----------
+    seed : int
+      Provides seed for generation of PRNG key used to sample initial particles.
+    mean_a/b/c/d : float
+      Value of the mean of Gaussian distribution A/B/C/D.
+    var_a/b/c/d : float
+      Value of the variance Gaussian distribution A/B/C/D.
+    """
+    num_particles = 100000
+    key = jax.random.PRNGKey(seed)
+    key, key_ = jax.random.split(key)
+
+    samples = jnp.sqrt(var_a) * jax.random.normal(key, (num_particles, 1)) + mean_a
+    log_density_a = norm.logpdf(samples, mean_a, 
+                                       jnp.sqrt(var_a)).flatten()
+    log_density_b = norm.logpdf(samples, mean_b, 
+                                         jnp.sqrt(var_b)).flatten()
+    log_weights = log_density_b - log_density_a
+
+    def flow_apply(unused_params, samples):
+      transported_samples = jnp.sqrt(var_c/var_b)*(samples-mean_b)+mean_c
+      log_det_jacs = jnp.log(jnp.sqrt(var_c/var_b)) * jnp.ones(num_particles)
+      return transported_samples, log_det_jacs
+    
+    def kl_div(mean0, var0, mean1, var1):
+      return 0.5 * (
+        var0 / var1 + jnp.square(mean1 - mean0) / var1 - 1. + jnp.log(var1) - 
+        jnp.log(var0))
+    
+    def step_density(beta, x):
+      log_density_b = norm.logpdf(x, mean_b, jnp.sqrt(var_b)).flatten()
+      log_density_d = norm.logpdf(x, mean_d, jnp.sqrt(var_d)).flatten()
+      return (1-beta)*log_density_b + beta*log_density_d
+    
+    test_div = su.estimate_free_energy(samples=samples, log_weights=log_weights, 
+                                       flow_apply=flow_apply, flow_params=None, 
+                                       log_density=step_density, beta=1, beta_prev=0)
+    true_div = kl_div(mean_c, var_c, mean_d, var_d)
+
+    self.assertAlmostEqual(test_div, true_div, delta=1e-1)
 
 if __name__ == '__main__':
   absltest.main()

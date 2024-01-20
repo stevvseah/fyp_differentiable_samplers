@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import chex
 from jax.scipy.special import logsumexp
+from typing import Tuple, Callable
 
 def log_effective_sample_size(log_weights:jax.Array) -> jax.Array:
 	"""Computes the log effective sample size.
@@ -28,7 +29,7 @@ def log_effective_sample_size(log_weights:jax.Array) -> jax.Array:
 	return log_ess
 
 def resample(key:jax.Array, log_weights:jax.Array, 
-						 samples:jax.Array) -> tuple[jax.Array, jax.Array]:
+						 samples:jax.Array) -> Tuple[jax.Array, jax.Array]:
 	"""Simple/multinomial resampling of sample particles.
 
 	New samples are drawn from Multinomial(softmax(log_weights), samples), 
@@ -68,7 +69,7 @@ def resample(key:jax.Array, log_weights:jax.Array,
 	return new_samples, new_log_weights
 
 def conditional_resample(key:jax.Array, log_weights:jax.Array, samples:jax.Array, 
-												 resample_threshold:float) -> tuple[jax.Array, jax.Array]:
+												 resample_threshold:float) -> Tuple[jax.Array, jax.Array]:
 	"""Performs resample if ESS is below resample_threshold * num_particles.
 
 	I.e. resample_threshold * num_particles is the threshold ESS to trigger resampling.
@@ -102,11 +103,26 @@ def conditional_resample(key:jax.Array, log_weights:jax.Array, samples:jax.Array
 	return new_samples, new_log_weights
 
 class GeometricAnnealingSchedule:
-  """Computes a geometric annealing schedule between initial and target log densities."""
-	
-  initial_log_density: callable[[int, jax.Array], jax.Array]
-  final_log_density: callable[[int, jax.Array], jax.Array]
-  num_temps: int
+  """Computes a geometric annealing schedule between initial and target log densities.
+  
+  Attributes
+  ----------
+  initial_log_density : Callable[[jax.Array], jax.Array]
+    A function that takes an array of shape (num_particles, particle_dim) containing 
+    the particle positions and returns an array of shape (num_particles,) containing 
+    the log densities of each particle under the initial distribution.
+  final_log_density : Callable[[jax.Array], jax.Array]
+    A function that takes an array of shape (num_particles, particle_dim) containing 
+    the particle positions and returns an array of shape (num_particles,) containing 
+    the log densities of each particle under the final distribution.
+  num_temps : int
+    The total number of temperatures the current annealing algorithm will use.
+  """
+  def __init__(self, initial_log_density:Callable[[jax.Array], jax.Array],
+               final_log_density:Callable[[jax.Array], jax.Array], num_temps:int):
+      self.initial_log_density = initial_log_density
+      self.final_log_density = final_log_density
+      self.num_temps = num_temps
 
   def get_beta(self, step:int) -> float:
     """Retrieves the value of the temperature at the current step.
@@ -149,8 +165,8 @@ class GeometricAnnealingSchedule:
     return interpolated_densities
 
 def get_log_weight_increment_no_flow(samples:jax.Array, 
-                                     log_density:callable[[int, jax.Array], jax.Array], 
-                                     step:int) -> jax.Array:
+                                     log_density:Callable[[float, jax.Array], jax.Array], 
+                                     beta:float, beta_prev:float) -> jax.Array:
   """Get the unnormalized log importance weights for the current temperature
   for an smc algorithm with no flow.
   
@@ -159,11 +175,14 @@ def get_log_weight_increment_no_flow(samples:jax.Array,
   samples : jax.Array
     An array of shape (num_particles, particle_dim) containing the 
     position of the particles at the current iteration.
-  log_density : callable[[int, jax.Array], jax.Array]
-    A function returning the unnormalized interpolated density at the 
-    temperature of the current step.
-  step : int
-    The iteration time step.
+  log_density : Callable[[float, jax.Array], jax.Array]
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  beta : float
+    The temperature at the current iteration.
+  beta_prev : float
+    The temperature at the previous iteration.
   
   Returns
   -------
@@ -171,17 +190,19 @@ def get_log_weight_increment_no_flow(samples:jax.Array,
     An array of shape (num_particles,) containing the unnormalized 
     importance weights of the particles for the current temperature.
   """
-  log_densities_current = log_density(step, samples)
-  log_densities_prev = log_density(step-1, samples)
+  log_densities_current = log_density(beta, samples)
+  log_densities_prev = log_density(beta_prev, samples)
   chex.assert_equal_shape([log_densities_current, log_densities_prev])
   log_weight_increment = log_densities_current - log_densities_prev
   return log_weight_increment
 
 def get_log_weight_increment_with_flow(samples:jax.Array, 
-                                       flow_apply:callable[[dict, jax.Array], [jax.Array, jax.Array]], 
+                                       flow_apply:Callable[[dict, jax.Array], 
+                                                           Tuple[jax.Array, jax.Array]], 
                                        flow_params:dict, 
-                                       log_density:callable[[int, jax.Array], jax.Array], 
-                                       step:int) -> tuple[jax.Array, jax.Array]:
+                                       log_density:Callable[[float, jax.Array], jax.Array], 
+                                       beta:float, 
+                                       beta_prev:float) -> tuple[jax.Array, jax.Array]:
   """Get the unnormalized log importance weights for the current temperature
   for an smc algorithm with flow.
   
@@ -190,16 +211,19 @@ def get_log_weight_increment_with_flow(samples:jax.Array,
   samples : jax.Array
     An array of shape (num_particles, particle_dim) containing the 
     position of the particles at the current iteration.
-  flow_apply : callable[[dict, jax.Array], [jax.Array, jax.Array]]
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
     A function that takes as input flow_params and samples to transport 
     the input samples by the underlying flow model.
   flow_params : dict
     The parameters of the flow model of flow_apply.
-  log_density : callable[[int, jax.Array], jax.Array]
-    A function returning the unnormalized interpolated density at the 
-    temperature of the current step.
-  step : int
-    The iteration time step.
+  log_density : Callable[[float, jax.Array], jax.Array]
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  beta : float
+    The temperature at the current iteration.
+  beta_prev : float
+    The temperature at the previous iteration.
   
   Returns
   -------
@@ -212,8 +236,8 @@ def get_log_weight_increment_with_flow(samples:jax.Array,
   """
   transported_samples, log_det_jacs = flow_apply(flow_params, samples)
   chex.assert_trees_all_equal_shapes(transported_samples, samples)
-  log_densities_current = log_density(step, samples)
-  log_densities_prev = log_density(step-1, samples)
+  log_densities_current = log_density(beta, transported_samples)
+  log_densities_prev = log_density(beta_prev, samples)
   chex.assert_equal_shape([log_densities_current, log_densities_prev])
   chex.assert_equal_shape([log_densities_prev, log_det_jacs])
   log_weight_increment = log_densities_current - log_densities_prev + log_det_jacs
@@ -221,11 +245,11 @@ def get_log_weight_increment_with_flow(samples:jax.Array,
 
 def estimate_free_energy(samples:jax.Array, 
                          log_weights:jax.Array, 
-                         flow_apply:callable[[dict, jax.Array], [jax.Array, jax.Array]], 
+                         flow_apply:Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
                          flow_params: dict, 
-                         log_density: callable[[int, jax.Array], jax.Array], 
-                         step:int) -> jax.Array:
-  """Compute an estimate of the free energy. This is the loss function
+                         log_density: Callable[[float, jax.Array], jax.Array], 
+                         beta:float, beta_prev:float) -> jax.Array:
+  """Compute an estimate of the free energy. This is the loss function 
   for AFT and CRAFT.
   
   This function takes the negative weighted average of the log weight 
@@ -241,16 +265,19 @@ def estimate_free_energy(samples:jax.Array,
   log_weights : jax.Array
     An array of shape (num_particles,) containing the normalized log 
     weights of the particles in samples.
-  flow_apply : callable[[dict, jax.Array], [jax.Array, jax.Array]]
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
     A function that takes as input flow_params and samples to transport 
     the input samples by the underlying flow model.
   flow_params : dict
     The parameters of the flow model of flow_apply.
-  log_density : callable[[int, jax.Array], jax.Array]
-    A function returning the unnormalized interpolated density at the 
-    temperature of the current step.
-  step : int
-    The iteration time step.
+  log_density : Callable[[float, jax.Array], jax.Array]
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  beta : float
+    The temperature at the current iteration.
+  beta_prev : float
+    The temperature at the previous iteration.
   
   Returns
   -------
@@ -259,13 +286,14 @@ def estimate_free_energy(samples:jax.Array,
     transported particles and the current bridging distribution.
   """
   log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply, 
-                                                               flow_params, log_density, step)
+                                                               flow_params, log_density, 
+                                                               beta, beta_prev)
   chex.assert_equal_shape([log_weight_increment, log_weights])
   div = jnp.sum(jax.nn.softmax(log_weights) * -log_weight_increment)
   return div
 
 def reweight_no_flow(log_weight_increment:jax.Array, 
-                     log_weights:jax.Array) -> tuple[jax.Array, float]:
+                     log_weights:jax.Array) -> Tuple[jax.Array, float]:
   """Compute the new weights and log evidence increment for this temperature.
 
   This is for SMC algorithms that do not a flow component.
@@ -298,10 +326,10 @@ def reweight_no_flow(log_weight_increment:jax.Array,
 
 def reweight_with_flow(samples:jax.Array, 
                        log_weights:jax.Array, 
-                       flow_apply:callable[[dict, jax.Array], [jax.Array, jax.Array]], 
+                       flow_apply:Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
                        flow_params:dict, 
-                       log_density:callable[[int, jax.Array], jax.Array], 
-                       step:int) -> tuple[jax.Array, float, jax.Array]:
+                       log_density:Callable[[float, jax.Array], jax.Array], 
+                       beta:float, beta_prev:float) -> Tuple[jax.Array, float, jax.Array]:
   """Compute the new weights and log evidence increment for this temperature.
 
   This is for SMC algorithms with a flow component.
@@ -314,16 +342,19 @@ def reweight_with_flow(samples:jax.Array,
   log_weights : jax.Array
     An array of shape (num_particles,) containing the normalized log 
     weights of the particles in samples.
-  flow_apply : callable[[dict, jax.Array], [jax.Array, jax.Array]]
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
     A function that takes as input flow_params and samples to transport 
     the input samples by the underlying flow model.
   flow_params : dict
     The parameters of the flow model of flow_apply.
-  log_density : callable[[int, jax.Array], jax.Array]
-    A function returning the unnormalized interpolated density at the 
-    temperature of the current step.
-  step : int
-    The iteration time step.
+  log_density : Callable[[float, jax.Array], jax.Array]
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  beta : float
+    The temperature at the current iteration.
+  beta_prev : float
+    The temperature at the previous iteration.
   
   Returns
   -------
@@ -341,13 +372,14 @@ def reweight_with_flow(samples:jax.Array,
                                                                                  flow_apply, 
                                                                                  flow_params, 
                                                                                  log_density, 
-                                                                                 step)
+                                                                                 beta,
+                                                                                 beta_prev)
   new_log_weights, log_evidence_increment = reweight_no_flow(log_weight_increment, log_weights)
   return new_log_weights, log_evidence_increment, transported_samples
 
 def update_samples_and_weights(key:jax.Array, samples:jax.Array, log_weights:jax.Array, 
-                               flow_apply:callable[[dict, jax.Array], [jax.Array, jax.Array]], 
-                               flow_params:dict, log_density:callable[[int, jax.Array], jax.Array], 
+                               flow_apply:Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
+                               flow_params:dict, log_density:Callable[[float, jax.Array], jax.Array], 
                                step:int, markov_kernel_apply) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
   """do markov kernels first"""
   pass
