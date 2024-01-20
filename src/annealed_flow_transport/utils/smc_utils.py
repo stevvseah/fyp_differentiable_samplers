@@ -4,7 +4,9 @@ import jax
 import jax.numpy as jnp
 import chex
 from jax.scipy.special import logsumexp
-from typing import Tuple, Callable
+from .aft_types import LogDensityByTemp
+from .hmc import HMCKernel
+from typing import Any, Tuple, Callable
 
 def log_effective_sample_size(log_weights:jax.Array) -> jax.Array:
 	"""Computes the log effective sample size.
@@ -119,7 +121,8 @@ class GeometricAnnealingSchedule:
     The total number of temperatures the current annealing algorithm will use.
   """
   def __init__(self, initial_log_density:Callable[[jax.Array], jax.Array],
-               final_log_density:Callable[[jax.Array], jax.Array], num_temps:int):
+               final_log_density:Callable[[jax.Array], jax.Array], 
+               num_temps:int) -> None:
       self.initial_log_density = initial_log_density
       self.final_log_density = final_log_density
       self.num_temps = num_temps
@@ -165,7 +168,7 @@ class GeometricAnnealingSchedule:
     return interpolated_densities
 
 def get_log_weight_increment_no_flow(samples:jax.Array, 
-                                     log_density:Callable[[float, jax.Array], jax.Array], 
+                                     log_density:LogDensityByTemp, 
                                      beta:float, beta_prev:float) -> jax.Array:
   """Get the unnormalized log importance weights for the current temperature
   for an smc algorithm with no flow.
@@ -175,7 +178,7 @@ def get_log_weight_increment_no_flow(samples:jax.Array,
   samples : jax.Array
     An array of shape (num_particles, particle_dim) containing the 
     position of the particles at the current iteration.
-  log_density : Callable[[float, jax.Array], jax.Array]
+  log_density : LogDensityByTemp
     A function taking as input a temperature and the array of particles, 
     returning the unnormalized density of the particles under the bridging 
     distribution at the input temperature.
@@ -200,7 +203,7 @@ def get_log_weight_increment_with_flow(samples:jax.Array,
                                        flow_apply:Callable[[dict, jax.Array], 
                                                            Tuple[jax.Array, jax.Array]], 
                                        flow_params:dict, 
-                                       log_density:Callable[[float, jax.Array], jax.Array], 
+                                       log_density:LogDensityByTemp, 
                                        beta:float, 
                                        beta_prev:float) -> tuple[jax.Array, jax.Array]:
   """Get the unnormalized log importance weights for the current temperature
@@ -216,7 +219,7 @@ def get_log_weight_increment_with_flow(samples:jax.Array,
     the input samples by the underlying flow model.
   flow_params : dict
     The parameters of the flow model of flow_apply.
-  log_density : Callable[[float, jax.Array], jax.Array]
+  log_density : LogDensityByTemp
     A function taking as input a temperature and the array of particles, 
     returning the unnormalized density of the particles under the bridging 
     distribution at the input temperature.
@@ -247,7 +250,7 @@ def estimate_free_energy(samples:jax.Array,
                          log_weights:jax.Array, 
                          flow_apply:Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
                          flow_params: dict, 
-                         log_density: Callable[[float, jax.Array], jax.Array], 
+                         log_density: LogDensityByTemp, 
                          beta:float, beta_prev:float) -> jax.Array:
   """Compute an estimate of the free energy. This is the loss function 
   for AFT and CRAFT.
@@ -270,7 +273,7 @@ def estimate_free_energy(samples:jax.Array,
     the input samples by the underlying flow model.
   flow_params : dict
     The parameters of the flow model of flow_apply.
-  log_density : Callable[[float, jax.Array], jax.Array]
+  log_density : LogDensityByTemp
     A function taking as input a temperature and the array of particles, 
     returning the unnormalized density of the particles under the bridging 
     distribution at the input temperature.
@@ -328,7 +331,7 @@ def reweight_with_flow(samples:jax.Array,
                        log_weights:jax.Array, 
                        flow_apply:Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
                        flow_params:dict, 
-                       log_density:Callable[[float, jax.Array], jax.Array], 
+                       log_density:LogDensityByTemp, 
                        beta:float, beta_prev:float) -> Tuple[jax.Array, float, jax.Array]:
   """Compute the new weights and log evidence increment for this temperature.
 
@@ -347,7 +350,7 @@ def reweight_with_flow(samples:jax.Array,
     the input samples by the underlying flow model.
   flow_params : dict
     The parameters of the flow model of flow_apply.
-  log_density : Callable[[float, jax.Array], jax.Array]
+  log_density : LogDensityByTemp
     A function taking as input a temperature and the array of particles, 
     returning the unnormalized density of the particles under the bridging 
     distribution at the input temperature.
@@ -377,9 +380,72 @@ def reweight_with_flow(samples:jax.Array,
   new_log_weights, log_evidence_increment = reweight_no_flow(log_weight_increment, log_weights)
   return new_log_weights, log_evidence_increment, transported_samples
 
-def update_samples_and_weights(key:jax.Array, samples:jax.Array, log_weights:jax.Array, 
-                               flow_apply:Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
-                               flow_params:dict, log_density:Callable[[float, jax.Array], jax.Array], 
-                               step:int, markov_kernel_apply) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-  """do markov kernels first"""
-  pass
+def update_samples_and_weights(key: jax.Array, samples: jax.Array, log_weights: jax.Array, 
+                               flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
+                               flow_params: dict, log_density: LogDensityByTemp, beta: float, 
+                               beta_prev: float, kernel: HMCKernel, threshold: float, step: int
+                               ) -> tuple[jax.Array, jax.Array, float, float]:
+  """Produce updated samples and log weights assuming the flow has been learned.
+  
+  Parameters
+  ----------
+  key : jax.Array
+    A jax PRNG key.
+  samples : jax.Array
+    The array of particles.
+  log_weights : jax.Array
+    The array of log weights of the batch of particles in samples.
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
+    A function that applies the flow.
+  flow_params : dict
+    The parameters of the flow.
+  log_density : LogDensityByTemp
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  beta : float
+    The current annealing temperature.
+  beta_prev : float
+    The annealing temperature of the previous iteration.
+  kernel : HMCKernel
+    The HMC Kernel to be applied in the MCMC step.
+  threshold : float
+    The ESS threshold to trigger resampling.
+  step : int
+    The current iteration time step, to input into kernel in case it uses 
+    a StepSizeSchedule.
+
+  Returns
+  -------
+  mcmc_samples : jax.Array
+    The array of particles after the transport, resampling, and mcmc steps.
+  resampled_log_weights : jax.Array
+    The array of log weights after the transport and resampling steps.
+  log_evidence_increment : float
+    The estimate of log Z_t - log Z_{t-1}, where Z_t is the normalizing 
+    constant of the t'th bridging distribution.
+  acceptance_rate : float
+    Average acceptance rate of all HMC moves in this batch of particles.
+  """
+  key1, key2 = jax.random.split(key)
+
+  # flow transport
+  new_log_weights, log_evidence_increment, transported_samples = reweight_with_flow(samples, 
+                                                                                    log_weights, 
+                                                                                    flow_apply, 
+                                                                                    flow_params, 
+                                                                                    log_density, 
+                                                                                    beta, beta_prev)
+  chex.assert_trees_all_equal_shapes(transported_samples, samples)
+  chex.assert_equal_shape([new_log_weights, log_weights])
+
+  # resampling
+  resampled_samples, resampled_log_weights = conditional_resample(key1, new_log_weights, 
+                                                                  transported_samples, threshold)
+  chex.assert_trees_all_equal_shapes(resampled_samples, transported_samples)
+  chex.assert_equal_shape([resampled_log_weights, new_log_weights])
+
+  # applying HMC Kernel
+  mcmc_samples, acceptance_rate = kernel(key2, resampled_samples, beta, step)
+
+  return mcmc_samples, resampled_log_weights, log_evidence_increment, acceptance_rate

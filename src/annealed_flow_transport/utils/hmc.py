@@ -4,47 +4,8 @@ import chex
 import jax
 import jax.numpy as jnp
 from ml_collections import ConfigDict
-from typing import Callable, Tuple
-
-class InterpolatedStepSizeSchedule:
-  """A callable object that outputs an interpolated step sizes.
-  
-  Attributes
-  ----------
-  interp_step_times : list
-    A list of step times to interpolate along.
-  interp_step_sizes : list
-    A list of step sizes to interpolate. Its elements must 
-    correspond to the step times in interp_step_times.
-  num_temps : int
-    The total number of temperatures that the annealing algorithm
-    is using.
-  """
-
-  def __init__(self, interp_step_times:list, 
-               interp_step_sizes:list, 
-               num_temps:int):
-    self.interp_step_times = interp_step_times
-    self.interp_step_sizes = interp_step_sizes
-    self.num_temps = num_temps
-
-  def __call__(self, step:int) -> float:
-    """Function to return an interpolated step size, given the 
-    current step index.
-    
-    Parameters
-    ----------
-    step : int
-      The current iteration step index.
-    step_size : float
-      the appropriate interpolated step size for the input step
-      index.
-    """
-    beta = step/(self.num_temps-1)
-    step_size = jnp.interp(beta, 
-                           jnp.array(self.interp_step_times), 
-                           jnp.array(self.interp_step_sizes))
-    return step_size
+from .aft_types import LogDensityByTemp, StepSizeSchedule
+from typing import Any, Callable, Tuple
   
 def tree_add(tree_a:chex.ArrayTree, 
              tree_b:chex.ArrayTree) -> chex.ArrayTree:
@@ -203,7 +164,7 @@ def hmc_step(samples_in: jax.Array,
              epsilon: float,
              log_density: Callable[[jax.Array], jax.Array],
              grad_log_density: Callable[[jax.Array], jax.Array],
-             num_leapfrog_iters: int) -> Tuple[jax.Array, jax.Array]:
+             num_leapfrog_iters: int) -> Tuple[jax.Array, float]:
   """A single step of Hamiltonian Monte Carlo.
 
   Parameters
@@ -290,11 +251,11 @@ def hmc_step(samples_in: jax.Array,
   exponential_rvs = jax.random.exponential(key=acceptance_key,
                                            shape=(num_batch,))
 
-  delta_log_prob = proposed_log_densities - current_log_densities
+  delta_log_prob = jnp.clip(proposed_log_densities - current_log_densities, a_max=0.)
   chex.assert_shape(delta_log_prob, (num_batch,))
   is_accepted = jnp.greater(delta_log_prob, -1.*exponential_rvs)
   chex.assert_shape(is_accepted, (num_batch,))
-  step_acceptance_rate = jnp.mean(is_accepted * 1.)
+  step_acceptance_rate = jnp.mean(jnp.exp(delta_log_prob))
   def acceptance(a, b):
     broadcast_axes = tuple(range(1, len(a.shape)))
     broadcast_is_accepted = jnp.expand_dims(is_accepted,
@@ -311,7 +272,7 @@ def hmc(samples_in: jax.Array,
         log_density: Callable[[jax.Array], jax.Array],
         grad_log_density: Callable[[jax.Array], jax.Array],
         num_leapfrog_iters: int,
-        num_hmc_iters: int) -> Tuple[jax.Array, jax.Array]:
+        num_hmc_iters: int) -> Tuple[jax.Array, float]:
   """Markov kernel stacking HMC steps together.
 
   Parameters
@@ -342,7 +303,7 @@ def hmc(samples_in: jax.Array,
     An array of shape (num_particles, particle_dim) containing the 
     positions of the particles at the end of the kernel.
   float
-    Empirical average acceptance rate of all HMC moves in this batch
+    Average acceptance rate of all HMC moves in this batch
     of particles.
   """
   step_keys = jax.random.split(key, num_hmc_iters)
@@ -363,11 +324,11 @@ def hmc(samples_in: jax.Array,
 def hmc_wrapped(samples_in: jax.Array,
                 key: jax.Array,
                 epsilon: float,
-                log_density_by_step: Callable[[float, jax.Array], jax.Array],
+                log_density_by_temp: LogDensityByTemp,
                 beta: float,
                 num_leapfrog_iters: int,
                 num_hmc_iters: int
-                ) -> Tuple[jax.Array, jax.Array]:
+                ) -> Tuple[jax.Array, float]:
   """A wrapper for HMC that deals with all the interfacing with the codebase.
 
   Parameters
@@ -379,7 +340,7 @@ def hmc_wrapped(samples_in: jax.Array,
     A jax PRNG key.
   epsilon : float
     A Scalar representing the constant step size.
-  log_density_by_step : Callable[[float, jax.Array], jax.Array]
+  log_density_by_temp : LogDensityByTemp
     A function that takes in the current annealing temperature and 
     the array of particle positions, and returns the log densities 
     of each particle in an array under the current bridging distribution.
@@ -396,10 +357,10 @@ def hmc_wrapped(samples_in: jax.Array,
     An array of shape (num_particles, particle_dim) containing the 
     positions of the particles at the end of the kernel.
   acceptance : float
-    Empirical average acceptance rate of all HMC moves in this batch
-    of particles.
+    Average acceptance rate of all HMC moves in this batch of 
+    particles.
   """
-  log_density = lambda x: log_density_by_step(beta, x)
+  log_density = lambda x: log_density_by_temp(beta, x)
   def unbatched_log_density(unbatched_tree_in):
     # Takes an unbatched tree and returns a single scalar value.
     batch_one_tree = jax.tree_util.tree_map(lambda x: x[None],
@@ -417,49 +378,65 @@ def hmc_wrapped(samples_in: jax.Array,
       num_hmc_iters=num_hmc_iters)
   return samples_out, acceptance
 
-def hmc_scheduled_step_size(samples_in: jax.Array, 
-                            key: jax.Array, 
-                            log_density_by_step: Callable[[float, jax.Array], jax.Array], 
-                            beta: float,
-                            num_leapfrog_iters: int, 
-                            num_hmc_iters: int, 
-                            step_size_scheduler: InterpolatedStepSizeSchedule,
-                            step: int) -> Tuple[jax.Array, jax.Array]:
-  """A wrapper for HMC that uses interpolated step sizes.
-
-  Parameters
+class HMCKernel:
+  """A callable that applies a HMC kernel onto an array of particles.
+  
+  Attributes
   ----------
-  samples_in : jax.Array
-    An array of shape (num_particles, particle_dim) containing 
-    the positions of the particles.
-  key : jax.Array
-    A jax PRNG key.
-  log_density_by_step : Callable[[float, jax.Array], jax.Array]
-    A function that takes in the current annealing temperature and 
-    the array of particle positions, and returns the log densities 
-    of each particle in an array under the current bridging distribution.
-  beta : float
-    The current annealing temperature.
+  log_density_by_temp : LogDensityByTemp
+    A function that takes as input the current annealing temperature 
+    and an array of particles to return the densities of the particles 
+    under the current bridging distribution.
+  epsilon : float|StepSizeSchedule
+    Either a float that will act as the constant step size for the 
+    kernel, or a StepSizeSchedule, which will change the 
+    step size of the kernel according to the schedule.
   num_leapfrog_iters : int
-    The number of leapfrog iterations for each HMC step.
+    Number of leapfrog iterations for each HMC step.
   num_hmc_iters : int
-    The number of HMC steps in this kernel.
-  step_size_scheduler : InterpolatedStepSizeSchedule
-    The step size scheduler.
-  step : int
-    the current iteration step index.
-
-  Returns
-  -------
-  samples_out : jax.Array
-    An array of shape (num_particles, particle_dim) containing the 
-    positions of the particles at the end of the kernel.
-  acceptance : float
-    Empirical average acceptance rate of all HMC moves in this batch
-    of particles.
+    Number of HMC iterations for each call of the kernel.
   """
-  epsilon = step_size_scheduler(step)
-  samples_out, acceptance = hmc_wrapped(samples_in, key, epsilon, 
-                                        log_density_by_step, beta, 
-                                        num_leapfrog_iters, num_hmc_iters)
-  return samples_out, acceptance
+  def __init__(self, log_density_by_temp: LogDensityByTemp, 
+               epsilon: float|StepSizeSchedule, 
+               num_leapfrog_iters: int, num_hmc_iters: int) -> None:
+    self.log_density_by_temp = log_density_by_temp
+    self.num_leapfrog_iters = num_leapfrog_iters
+    self.num_hmc_iters = num_hmc_iters
+    if isinstance(epsilon, StepSizeSchedule):
+      self.epsilon = epsilon
+    else:
+      self.epsilon = lambda x: epsilon
+
+  def __call__(self, key:jax.Array, samples: jax.Array, 
+               beta: float, step: int=0) -> Tuple[jax.Array, float]:
+    """Applies a HMC kernel onto the input array of particles.
+    
+    Parameters
+    ----------
+    key : jax.Array
+      A jax PRNG key.
+    samples : jax.Array
+      An array of shape (num_particles, particle_dim) containing 
+      the positions of a batch of particles.
+    beta : float
+      The current annealing temperature.
+    step : int
+      The current annealing iteration step. This is optional in 
+      the event that epsilon is not a StepSizeSchedule, in which 
+      case step will take the default value of 0.
+    
+    Returns
+    -------
+    samples_out : jax.Array
+      An array of shape (num_particles, particle_dim) containing the 
+      positions of the particles at the end of the kernel.
+    acceptance_rate : float
+      Average acceptance rate of all HMC moves in this batch of 
+      particles.
+    """
+    step_size = self.epsilon(step)
+    samples_out, acceptance_rate = hmc_wrapped(samples, key, step_size, 
+                                          self.log_density_by_temp, 
+                                          beta, self.num_leapfrog_iters, 
+                                          self.num_hmc_iters)
+    return samples_out, acceptance_rate
