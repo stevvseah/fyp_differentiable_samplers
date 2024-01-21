@@ -396,7 +396,7 @@ class HMCKernel:
     Number of HMC iterations for each call of the kernel.
   """
   def __init__(self, log_density_by_temp: LogDensityByTemp, 
-               epsilon: float|StepSizeSchedule, 
+               epsilon: float | StepSizeSchedule, 
                num_leapfrog_iters: int, num_hmc_iters: int) -> None:
     self.log_density_by_temp = log_density_by_temp
     self.num_leapfrog_iters = num_leapfrog_iters
