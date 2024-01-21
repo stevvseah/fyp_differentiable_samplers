@@ -3,8 +3,7 @@
 import chex
 import jax
 import jax.numpy as jnp
-from ml_collections import ConfigDict
-from .aft_types import LogDensityByTemp, StepSizeSchedule
+from .aft_types import LogDensityByTemp, LogDensity, StepSizeSchedule
 from typing import Any, Callable, Tuple
   
 def tree_add(tree_a:chex.ArrayTree, 
@@ -162,7 +161,7 @@ def random_normal_like_tree(key:jax.Array, tree:chex.ArrayTree):
 def hmc_step(samples_in: jax.Array,
              key: jax.Array,
              epsilon: float,
-             log_density: Callable[[jax.Array], jax.Array],
+             log_density: LogDensity,
              grad_log_density: Callable[[jax.Array], jax.Array],
              num_leapfrog_iters: int) -> Tuple[jax.Array, float]:
   """A single step of Hamiltonian Monte Carlo.
@@ -176,7 +175,7 @@ def hmc_step(samples_in: jax.Array,
     A jax PRNG key.
   epsilon : float
     A Scalar representing the constant step size.
-  log_density : Callable[[jax.Array], jax.Array]
+  log_density : LogDensity
     A function that takes in the array of particle positions and 
     returns the log densities of each particle in an array.
   grad_log_density : Callable[[jax.Array], jax.Array]
@@ -269,7 +268,7 @@ def hmc_step(samples_in: jax.Array,
 def hmc(samples_in: jax.Array,
         key: jax.Array,
         epsilon: float,
-        log_density: Callable[[jax.Array], jax.Array],
+        log_density: LogDensity,
         grad_log_density: Callable[[jax.Array], jax.Array],
         num_leapfrog_iters: int,
         num_hmc_iters: int) -> Tuple[jax.Array, float]:
@@ -284,7 +283,7 @@ def hmc(samples_in: jax.Array,
     A jax PRNG key.
   epsilon : float
     A Scalar representing the constant step size.
-  log_density : Callable[[jax.Array], jax.Array]
+  log_density : LogDensity
     A function that takes in the array of particle positions and 
     returns the log densities of each particle in an array.
   grad_log_density : Callable[[jax.Array], jax.Array]

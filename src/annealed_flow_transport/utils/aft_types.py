@@ -4,7 +4,31 @@ import jax
 import jax.numpy as jnp
 import optax
 import ml_collections
-from typing import Any, Callable
+
+class LogDensity:
+  """Wrapper class for log density functions."""
+  def log_density(self, samples: jax.Array) -> jax.Array:
+    """Abstract method to return the log density, to 
+    be defined in a subclass."""
+    raise NotImplementedError
+  
+  def __call__(self, samples: jax.Array) -> jax.Array:
+    """Returns the log densities of an input array 
+    of particle positions, under a defined distribution.
+    
+    Parameters
+    ----------
+    samples : jax.Array
+      An array of shape (num_particles, particle_dim) 
+      containing the positions of a batch of particles.
+    
+    Returns
+    -------
+    jax.Array
+      An array of shape (num_particles,) containing the 
+      log densities of each particle in samples.
+    """
+    return self.log_density(samples)
 
 class LogDensityByTemp:
   """Container that also behaves as a function that returns the 
@@ -12,18 +36,18 @@ class LogDensityByTemp:
 
   Attributes
   ----------
-  initial_log_density : Callable[[jax.Array], jax.Array]
+  initial_log_density : LogDensity
     A function that takes in an array of particles and outputs 
     an array of log densities of the particles under the initial 
     proposal distribution.
-  final_log_density : Callable[[jax.Array], jax.Array]
-    A function that takes in an array fo particles and outputs 
+  final_log_density : LogDensity
+    A function that takes in an array of particles and outputs 
     an array of log densities of the particles under the target 
     distribution.
   """
   def __init__(self, 
-               initial_log_density: Callable[[jax.Array], jax.Array], 
-               final_log_density: Callable[[jax.Array], jax.Array]) -> None:
+               initial_log_density: LogDensity, 
+               final_log_density: LogDensity) -> None:
     self.initial_log_density = initial_log_density
     self.final_log_density = final_log_density
   
@@ -51,7 +75,7 @@ class LogDensityByTemp:
     return interpolated_density
   
 class StepSizeSchedule:
-  """Dummy superclass that step size schedulers should inherit from 
+  """Dummy class that step size schedulers should inherit from 
   to use with HMCKernel.
   """
 
@@ -69,7 +93,6 @@ class InterpolatedStepSizeSchedule(StepSizeSchedule):
     The total number of temperatures that the annealing algorithm
     is using.
   """
-
   def __init__(self, interp_step_times:list, 
                interp_step_sizes:list, 
                num_temps:int) -> None:
@@ -94,3 +117,34 @@ class InterpolatedStepSizeSchedule(StepSizeSchedule):
                            jnp.array(self.interp_step_times), 
                            jnp.array(self.interp_step_sizes))
     return step_size
+  
+class InitialDensitySampler:
+  """Wrapper class for samplers of initial densities to standardize 
+  their signatures."""
+  def sampler(self, key: jax.Array, num_particles: int, 
+              particle_dim: int) -> jax.Array:
+    """Abstract method to sample from a defined distribution, 
+    to be defined in a subclass."""
+    raise NotImplementedError
+
+  def __call__(self, key: jax.Array, num_particles: int, 
+               particle_dim: int) -> jax.Array:
+    """Samples from an initial distribution.
+    
+    Parameters
+    ----------
+    key : jax.Array
+      A jax PRNG key.
+    num_particles : int
+      The number of particles in this batch.
+    particle_dim : int
+      The dimension of the particle positions.
+    
+    Returns
+    -------
+    jax.Array
+      An array of shape (num_particles, particle_dim) containing
+      the particle positions as drawn from the defined initial 
+      distribution.
+    """
+    return self.sampler(key, num_particles, particle_dim)
