@@ -135,14 +135,9 @@ class InitialDensitySampler:
     self.num_particles = num_particles
     self.particle_dim = particle_dim
 
-  def sampler(self, key: jax.Array, num_particles: int, 
-              particle_dim: int) -> jax.Array:
-    """Abstract method to sample from a defined distribution, 
-    to be defined in a subclass."""
-    raise NotImplementedError
-
   def __call__(self, key: jax.Array) -> jax.Array:
-    """Samples from an initial distribution.
+    """Abstract method to sample from a defined distribution, 
+    to be defined in a subclass
     
     Parameters
     ----------
@@ -156,4 +151,4 @@ class InitialDensitySampler:
       the particle positions as drawn from the defined initial 
       distribution.
     """
-    return self.sampler(key, self.num_particles, self.particle_dim)
+    raise NotImplementedError
