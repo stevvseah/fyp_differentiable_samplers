@@ -323,7 +323,7 @@ def reweight_no_flow(log_weight_increment: jax.Array,
   normalized_log_weights = jax.nn.log_softmax(log_weights)
   new_unnormalized_log_weights = normalized_log_weights + log_weight_increment
   log_evidence_increment = logsumexp(new_unnormalized_log_weights)
-  new_log_weights = jax.nn.log_softmax(log_evidence_increment)
+  new_log_weights = jax.nn.log_softmax(new_unnormalized_log_weights)
   chex.assert_equal_shape([new_log_weights, log_weights])
   chex.assert_rank(log_evidence_increment, 0)
   return new_log_weights, log_evidence_increment

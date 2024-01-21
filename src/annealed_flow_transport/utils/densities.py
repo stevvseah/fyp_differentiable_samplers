@@ -25,7 +25,7 @@ class NormalDistribution(LogDensity):
     super().__init__()
     self.loc = jnp.array(loc)
     self.scale = jnp.array(scale)
-    chex.assert_equal_shape([loc, scale])
+    chex.assert_equal_shape([self.loc, self.scale])
 
   def __call__(self, samples: jax.Array) -> jax.Array:
     """Takes an array of particles as input and returns the 
@@ -57,7 +57,7 @@ class ChallengingTwoDimensionalMixture(LogDensity):
     Parameters
     ----------
     x : jax.Array
-      An array of particles of shape (num_particles, particle_dim).
+      An array of particles of shape (num_particles, 2).
     
     Returns
     -------
@@ -96,7 +96,7 @@ class ChallengingTwoDimensionalMixture(LogDensity):
     Parameters
     ----------
     samples : jax.Array
-      An array of particles of shape (num_particles, particle_dim).
+      An array of particles of shape (num_particles, 2).
 
     Returns
     -------
@@ -104,6 +104,8 @@ class ChallengingTwoDimensionalMixture(LogDensity):
       An array of shape (num_particles,) of log densities of the 
       particles under Neal's funnel distribution.
     """
+    chex.assert_shape(samples, (None, 2))
+    
     density_func = lambda x: self.make_2d_invariant(self.raw_log_density, x)
     return jax.vmap(density_func)(samples)
 
@@ -127,6 +129,8 @@ class NealsFunnel(LogDensity):
       An array of shape (num_particles,) of log densities of the 
       particles under Neal's funnel distribution.
     """
+    chex.assert_shape(samples, (None, 10))
+
     def unbatched_call(x):
       v = x[0]
       log_density_v = norm.logpdf(v, 0., 3.)
