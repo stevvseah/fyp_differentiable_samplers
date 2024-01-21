@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 import chex
 from flax import linen as nn
-import optax
 from typing import Tuple
 
 class DiagonalAffine(nn.Module):
