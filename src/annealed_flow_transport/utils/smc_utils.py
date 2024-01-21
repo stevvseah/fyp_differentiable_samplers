@@ -300,7 +300,7 @@ def reweight_no_flow(log_weight_increment: jax.Array,
                      log_weights: jax.Array) -> Tuple[jax.Array, float]:
   """Compute the new weights and log evidence increment for this temperature.
 
-  This is for SMC algorithms that do not a flow component.
+  This is for SMC algorithms that do not have a flow component.
 
   Parameters
   ----------

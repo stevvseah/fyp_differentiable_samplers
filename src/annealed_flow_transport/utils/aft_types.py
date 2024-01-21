@@ -120,25 +120,34 @@ class InterpolatedStepSizeSchedule(StepSizeSchedule):
   
 class InitialDensitySampler:
   """Wrapper class for samplers of initial densities to standardize 
-  their signatures."""
+  their signatures.
+  
+  Attributes
+  ----------
+  num_particles : int
+    The number of particles in this batch.
+  particle_dim : int
+    The dimension of the particle positions.
+  """
+
+  def __init__(self, num_particles: int, 
+               particle_dim: int) -> None:
+    self.num_particles = num_particles
+    self.particle_dim = particle_dim
+
   def sampler(self, key: jax.Array, num_particles: int, 
               particle_dim: int) -> jax.Array:
     """Abstract method to sample from a defined distribution, 
     to be defined in a subclass."""
     raise NotImplementedError
 
-  def __call__(self, key: jax.Array, num_particles: int, 
-               particle_dim: int) -> jax.Array:
+  def __call__(self, key: jax.Array) -> jax.Array:
     """Samples from an initial distribution.
     
     Parameters
     ----------
     key : jax.Array
       A jax PRNG key.
-    num_particles : int
-      The number of particles in this batch.
-    particle_dim : int
-      The dimension of the particle positions.
     
     Returns
     -------
@@ -147,4 +156,4 @@ class InitialDensitySampler:
       the particle positions as drawn from the defined initial 
       distribution.
     """
-    return self.sampler(key, num_particles, particle_dim)
+    return self.sampler(key, self.num_particles, self.particle_dim)
