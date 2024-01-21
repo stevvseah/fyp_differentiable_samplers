@@ -7,14 +7,10 @@ import ml_collections
 
 class LogDensity:
   """Wrapper class for log density functions."""
-  def log_density(self, samples: jax.Array) -> jax.Array:
-    """Abstract method to return the log density, to 
-    be defined in a subclass."""
-    raise NotImplementedError
   
   def __call__(self, samples: jax.Array) -> jax.Array:
-    """Returns the log densities of an input array 
-    of particle positions, under a defined distribution.
+    """Abstract method to return the log density of an 
+    input array of particles, to be defined in a subclass.
     
     Parameters
     ----------
@@ -28,7 +24,7 @@ class LogDensity:
       An array of shape (num_particles,) containing the 
       log densities of each particle in samples.
     """
-    return self.log_density(samples)
+    raise NotImplementedError
 
 class LogDensityByTemp:
   """Container that also behaves as a function that returns the 
@@ -137,7 +133,7 @@ class InitialDensitySampler:
 
   def __call__(self, key: jax.Array) -> jax.Array:
     """Abstract method to sample from a defined distribution, 
-    to be defined in a subclass
+    to be defined in a subclass.
     
     Parameters
     ----------
