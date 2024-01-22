@@ -117,7 +117,7 @@ def fast_smc_apply(key: jax.Array, log_density: LogDensityByTemp,
 
   return final_samples, final_log_weights, log_evidence_estimate, acpt_rates
 
-def smc_apply(key: jax.Array, log_density: LogDensityByTemp, 
+def apply(key: jax.Array, log_density: LogDensityByTemp, 
               initial_sampler: InitialDensitySampler, 
               kernel: HMCKernel, threshold: float, 
               num_temps: int, report_interval: int = 1
@@ -175,7 +175,7 @@ def smc_apply(key: jax.Array, log_density: LogDensityByTemp,
   smc_step(key_, samples, log_weights, 0.1, 0, 1)
   initial_finish_time = time()
   initial_time_diff = initial_finish_time - initial_start_time
-  logging.info('Initial step time / seconds  %f: ', initial_time_diff)
+  logging.info(f'Initial step time / seconds: {initial_time_diff}')
 
   # training step
   beta = 0.

@@ -252,9 +252,9 @@ def estimate_free_energy(samples: jax.Array,
                                               Tuple[jax.Array, jax.Array]], 
                          flow_params: dict, 
                          log_density: LogDensityByTemp, 
-                         beta: float, beta_prev: float) -> jax.Array:
-  """Compute an estimate of the free energy. This is the loss function 
-  for AFT and CRAFT.
+                         beta: float, beta_prev: float) -> float:
+  """Compute an estimate of the variational free energy. This is the 
+  loss function for AFT and CRAFT.
   
   This function takes the negative weighted average of the log weight 
   increments, which is equivalent to estimating the KL divergence 
