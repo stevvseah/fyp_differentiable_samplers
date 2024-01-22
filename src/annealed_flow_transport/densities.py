@@ -6,7 +6,7 @@ import chex
 from jax.scipy.stats import norm
 import jax.scipy.linalg as slinalg
 from jax.scipy.special import logsumexp
-from .aft_types import LogDensity
+from .utils.aft_types import LogDensity
 
 class NormalDistribution(LogDensity):
   """Wrapper for the log density function of univariate 

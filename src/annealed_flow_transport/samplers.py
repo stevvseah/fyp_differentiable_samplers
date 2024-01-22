@@ -4,7 +4,7 @@ import jax
 import chex
 import jax.numpy as jnp
 from jax.random import normal
-from .aft_types import InitialDensitySampler
+from .utils.aft_types import InitialDensitySampler
 
 class NormalSampler(InitialDensitySampler):
   """Wrapper for univariate and multivariate normal 
