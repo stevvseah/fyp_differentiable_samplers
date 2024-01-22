@@ -77,7 +77,7 @@ class ResamplingTest(parameterized.TestCase):
     """
     self.assertLess(large_weights.shape[0], num_particles)
 
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
     key1, key2 = jax.random.split(key)
     samples = jax.random.normal(key1, (num_particles, 1))
     weights = jnp.concatenate( (large_weights, jnp.zeros(num_particles-large_weights.shape[0])) )
@@ -123,7 +123,7 @@ class ResamplingTest(parameterized.TestCase):
     particle_dim : int
       Dimension of each particle.    
     """
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
     key1, key2, key3 = jax.random.split(key, num=3)
 
     # compute the true resampled particles and log weights
@@ -179,7 +179,7 @@ class UpdatesTest(parameterized.TestCase):
       Value of the variance Gaussian distribution A/B/C/D.
     """
     num_particles = 100000
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
     key, key_ = jax.random.split(key)
 
     samples = jnp.sqrt(var_a) * jax.random.normal(key, (num_particles, 1)) + mean_a
