@@ -2,12 +2,14 @@
 
 import jax
 import jax.numpy as jnp
-import optax
-import ml_collections
+from ml_collections import ConfigDict
 
 class LogDensity:
   """Wrapper class for log density functions."""
   
+  def __init__(self, config: ConfigDict) -> None:
+    pass
+
   def __call__(self, samples: jax.Array) -> jax.Array:
     """Abstract method to return the log density of an 
     input array of particles, to be defined in a subclass.

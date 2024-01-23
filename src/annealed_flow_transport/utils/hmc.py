@@ -386,7 +386,7 @@ class HMCKernel:
     A function that takes as input the current annealing temperature 
     and an array of particles to return the densities of the particles 
     under the current bridging distribution.
-  epsilon : float|StepSizeSchedule
+  epsilon : float | StepSizeSchedule
     Either a float that will act as the constant step size for the 
     kernel, or a StepSizeSchedule, which will change the 
     step size of the kernel according to the schedule.

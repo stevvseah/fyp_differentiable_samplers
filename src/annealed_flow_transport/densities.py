@@ -6,6 +6,7 @@ import chex
 from jax.scipy.stats import norm
 import jax.scipy.linalg as slinalg
 from jax.scipy.special import logsumexp
+from ml_collections import ConfigDict
 from .utils.aft_types import LogDensity
 
 class NormalDistribution(LogDensity):
@@ -15,16 +16,15 @@ class NormalDistribution(LogDensity):
   
   Attributes
   ----------
-  loc : float | Array
+  loc : jax.Array
     The mean of the distribution.
-  scale : float | Array
+  scale : jax.Array
     The standard deviation of each component.
   """
-  def __init__(self, loc: float | list[float]=0., 
-               scale: float| list[float]=1.) -> None:
-    super().__init__()
-    self.loc = jnp.array(loc)
-    self.scale = jnp.array(scale)
+  def __init__(self, config: ConfigDict) -> None:
+    super().__init__(config)
+    self.loc = jnp.array(config.loc)
+    self.scale = jnp.array(config.scale)
     chex.assert_equal_shape([self.loc, self.scale])
 
   def __call__(self, samples: jax.Array) -> jax.Array:

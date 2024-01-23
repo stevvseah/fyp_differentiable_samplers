@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import chex
 from flax import linen as nn
 from typing import Tuple
+from ml_collections import ConfigDict
 
 class DiagonalAffine(nn.Module):
   """An affine transformation with a positive definite 
@@ -12,12 +13,13 @@ class DiagonalAffine(nn.Module):
   
   Attributes
   ----------
-  particle_dim : int
-    The number of dimensions of the particle positions.
+  config : ConfigDict
+  The config dict related to flow configurations.
   """
-  particle_dim: int
+  config: ConfigDict
 
   def setup(self):
+    self.particle_dim = self.config.particle_dim
     self.scale = self.param('scale', 
                             nn.initializers.zeros, 
                             (self.particle_dim,))

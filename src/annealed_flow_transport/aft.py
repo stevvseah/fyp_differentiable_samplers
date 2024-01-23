@@ -503,7 +503,7 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     val_loss_history.append(best_val_loss)
     train_loss_history.append(train_loss)
     if step % report_interval == 0:
-      logging.info(f"Step {step:04d}: beta {beta} \t log evidence {log_evidence} \t acceptance rate {acpt_rate}")
+      logging.info(f"Step {step:04d}: beta {beta:.5f} \t validation loss {best_val_loss:.5f} \t acceptance rate {acpt_rate:.5f}")
   finish_time = time()
   train_time_diff = finish_time - start_time
 

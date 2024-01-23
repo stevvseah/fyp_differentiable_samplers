@@ -382,7 +382,7 @@ def apply(key: jax.Array,
     vfe_history.append(total_vfe)
     log_evidence_history.append(log_evidence)
     if step % report_interval == 0:
-      logging.info(f"Step {step:04d}: vfe {total_vfe} \t log evidence {log_evidence} \t acceptance rate {jnp.mean(acpt_rate)}")
+      logging.info(f"Step {step:04d}: vfe {total_vfe:.5f} \t log evidence {log_evidence:.5f} \t acceptance rate {jnp.mean(acpt_rate):.5f}")
   finish_time = time()
   train_time_diff = finish_time - start_time
 

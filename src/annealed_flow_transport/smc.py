@@ -120,7 +120,8 @@ def fast_smc_apply(key: jax.Array, log_density: LogDensityByTemp,
 def apply(key: jax.Array, log_density: LogDensityByTemp, 
               initial_sampler: InitialDensitySampler, 
               kernel: HMCKernel, threshold: float, 
-              num_temps: int, report_interval: int = 1
+              num_temps: int, betas: jax.Array | None = None, 
+              report_interval: int = 1
               ) -> Tuple[jax.Array, jax.Array, float, jax.Array]:
   """Applies the SMC algorithm.
 
@@ -142,7 +143,11 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
     The ESS threshold to trigger resampling.
   num_temps : int
     The total number of annealing temperatures for the SMC.
-  report_interval : int
+  betas : jax.Array | None = None
+    An optional argument for the array of temperatures to be used by 
+    the CRAFT algorithm. If not specified, defaults to a geometric 
+    annealing schedule.
+  report_interval : int = 1
     The number of temperatures before reporting training status again. 
     Has a default value of 1.
 
@@ -163,6 +168,8 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
 
   # initialize starting variables
   key, key_ = jax.random.split(key)
+  if not betas:
+    betas = jnp.arange(1, num_temps)/(num_temps-1)
   batch_size = initial_sampler.num_particles
   samples = initial_sampler(key_)
   log_weights = -jnp.log(batch_size) * jnp.ones(batch_size)
@@ -186,14 +193,14 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
   for step in range(1, num_temps):
     key, key_ = jax.random.split(key)
     beta_prev = beta
-    beta = step/(num_temps-1)
+    beta = betas[step-1]
     samples, log_weights, log_evidence_increment, acpt_rate = smc_step(key_, samples, 
                                                                        log_weights, beta, 
                                                                        beta_prev, step)
     log_evidence += log_evidence_increment
     acpt_rate_history.append(acpt_rate)
     if step % report_interval == 0:
-      logging.info(f"Step {step:03d}: beta {beta} \t log evidence {log_evidence} \t acceptance rate {acpt_rate}")
+      logging.info(f"Step {step:03d}: beta {beta:.5f} \t acceptance rate {acpt_rate:.5f}")
   finish_time = time()
   train_time_diff = finish_time - start_time
 
