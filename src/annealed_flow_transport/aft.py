@@ -2,7 +2,6 @@
 
 import jax
 import jax.numpy as jnp
-import chex
 import optax
 from absl import logging
 from time import time
@@ -390,7 +389,9 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
           train_sampler: InitialDensitySampler, kernel: HMCKernel, 
           flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]],
           params: dict, opt: optax.GradientTransformation, threshold: float,
-          num_train_iters: int, num_temps: int, report_interval: int = 1):
+          num_train_iters: int, num_temps: int, betas: jax.Array | None = None, 
+          report_interval: int = 1
+          ) -> Tuple[jax.Array, jax.Array, float, jax.Array, jax.Array, jax.Array]:
   """Applies the AFT algorithm.
   
   Parameters
@@ -426,7 +427,11 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     annealing temperature.
   num_temps : int
     The total number of annealing temperatures for the AFT.
-  report_interval : int
+  betas : jax.Array | None = None
+    An optional argument for the array of temperatures to be used by 
+    the CRAFT algorithm. If not specified, defaults to a geometric 
+    annealing schedule.
+  report_interval : int = 1
     The number of temperatures before reporting training status again. 
     Has a default value of 1.
 
@@ -446,9 +451,14 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
   val_loss_history : jax.Array
     An array containing the validation losses for the final parameters 
     used the flow model for each temperature.
+  train_loss_history : jax.Array
+    An array containing the training losses for the training loops in 
+    each temperature.
   """
   # initialize starting variables
   key, key_ = jax.random.split(key)
+  if not betas:
+    betas = jnp.arange(1, num_temps)/(num_temps-1)
   samples_tuple, log_weights_tuple = initialize_particle_tuple(key_, sampler, train_sampler)
 
   def loss_fn(samples, log_weights, flow_params, beta, beta_prev):
@@ -461,11 +471,6 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     return aft_step(key, samples_tuple, log_weights_tuple, beta, beta_prev, 
                     flow_apply, params, kernel, log_density, step, threshold, 
                     num_train_iters, opt, loss_val_and_grad)
-    
-  # specified_aft_step = jax.tree_util.Partial(aft_step, flow_apply=flow_apply, kernel=kernel, 
-  #                                            log_density=log_density, threshold=threshold, 
-  #                                            num_train_iters=num_train_iters, opt=opt, 
-  #                                            loss_val_and_grad=loss_val_and_grad)
   
   # jit step
   logging.info('Jitting step...')
@@ -488,7 +493,7 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
   for step in range(1, num_temps):
     key, key_ = jax.random.split(key)
     beta_prev = beta
-    beta = step/(num_temps-1)
+    beta = betas[step-1]
     samples_tuple, log_weights_tuple, log_evidence_increment, \
       acpt_rate, best_val_loss, train_loss = jitted_aft_step(key_, samples_tuple, 
                                                              log_weights_tuple, beta, 
@@ -498,11 +503,11 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     val_loss_history.append(best_val_loss)
     train_loss_history.append(train_loss)
     if step % report_interval == 0:
-      logging.info(f"Step {step:03d}: beta {beta} \t log evidence {log_evidence} \t acceptance rate {acpt_rate}")
+      logging.info(f"Step {step:04d}: beta {beta} \t log evidence {log_evidence} \t acceptance rate {acpt_rate}")
   finish_time = time()
   train_time_diff = finish_time - start_time
 
-  # end of training info dump
+  # end-of-training info dump
   logging.info(f"Training time / seconds : {train_time_diff}")
   logging.info(f"Log evidence estimate : {log_evidence}")
 
