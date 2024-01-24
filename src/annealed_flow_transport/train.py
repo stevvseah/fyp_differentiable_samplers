@@ -131,7 +131,7 @@ def sample(config: ConfigDict):
     train_batch_size = config.aft_config.train_num_particles
     train_sampler = NormalSampler(train_batch_size, particle_dim)
 
-    flow = getattr(flows, config.flow_config.type)(config.flow_config)
+    flow = getattr(flows, config.flow_config.type)(config)
     flow_apply = flow.apply
     params = flow.init(key, sampler(key))
 
@@ -153,7 +153,7 @@ def sample(config: ConfigDict):
 
     craft_num_train_iters = config.craft_config.num_train_iters
 
-    flow = getattr(flows, config.flow_config.type)(config.flow_config)
+    flow = getattr(flows, config.flow_config.type)(config)
     flow_apply = flow.apply
     params = flow.init(key, sampler(key))
 

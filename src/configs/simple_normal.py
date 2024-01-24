@@ -61,7 +61,6 @@ def get_config():
   flow_config = ConfigDict()
 
   flow_config.type = 'DiagonalAffine'
-  flow_config.particle_dim = config.particle_dim
 
   config.flow_config = flow_config
 

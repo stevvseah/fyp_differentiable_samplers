@@ -1,4 +1,4 @@
-"""Runs a sampler over the log-Gaussian-Cox process target distribution."""
+"""Runs a sampler over Neal's funnel distribution."""
 
 from ml_collections import ConfigDict
 
@@ -10,10 +10,10 @@ def get_config():
   ###############
   config.seed = 1
   config.num_particles = 2000
-  config.particle_dim = 1024
+  config.particle_dim = 10
   config.threshold = 0.5
   config.num_temps = 11
-  config.algo = 'craft'
+  config.algo = 'aft'
   config.report_interval = 1
   
   # optional
@@ -34,10 +34,7 @@ def get_config():
   ########################
   final_density_config = ConfigDict()
 
-  final_density_config.density = 'LogGaussianCoxPines'
-  final_density_config.particle_dim = config.particle_dim
-  final_density_config.file_path = './data/finpines.csv'
-  final_density_config.use_whitened = False
+  final_density_config.density = 'NealsFunnel'
 
 
   config.final_density_config = final_density_config
@@ -52,8 +49,8 @@ def get_config():
   kernel_config.step_size = 0.2
 
   # optional
-  kernel_config.interp_step_times = [0., 0.25, 0.5, 1.]
-  kernel_config.interp_step_sizes = [0.3, 0.3, 0.2, 0.2]
+  kernel_config.interp_step_times = [0., 0.25, 0.5, 0.75, 1.]
+  kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
 
   config.kernel_config = kernel_config
 
@@ -62,7 +59,9 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'DiagonalAffine'
+  flow_config.type = 'AffineInverseAutoregressiveFlow'
+  flow_config.num_hidden_layers = 3
+  flow_config.hidden_layer_dim = 30
 
   config.flow_config = flow_config
 
@@ -71,8 +70,8 @@ def get_config():
   ##############
   aft_config = ConfigDict()
 
-  aft_config.num_train_iters = 100
-  aft_config.train_num_particles = 2000
+  aft_config.num_train_iters = 200
+  aft_config.train_num_particles = 6000
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
 
