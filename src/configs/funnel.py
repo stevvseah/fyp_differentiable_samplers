@@ -11,8 +11,8 @@ def get_config():
   config.seed = 1
   config.num_particles = 2000
   config.particle_dim = 10
-  config.threshold = 0.5
-  config.num_temps = 11
+  config.threshold = 0.3
+  config.num_temps = 9
   config.algo = 'aft'
   config.report_interval = 1
   
@@ -63,6 +63,11 @@ def get_config():
   flow_config.num_hidden_layers = 3
   flow_config.hidden_layer_dim = 30
 
+  # flow_config.type = 'RealNVP'
+  # flow_config.num_coupling_layers = 3
+  # flow_config.hidden_layer_dim = 30
+  # flow_config.num_hidden_layers_per_coupling = 2
+
   config.flow_config = flow_config
 
   ##############
@@ -83,8 +88,8 @@ def get_config():
   craft_config = ConfigDict()
 
   craft_config.num_train_iters = 200
-  craft_config.initial_learning_rate = 5e-2
-  craft_config.boundaries_and_scales = ({100: 1e-2},)
+  craft_config.initial_learning_rate = 1e-3
+  # craft_config.boundaries_and_scales = ({100: 1e-2},)
 
   config.craft_config = craft_config
 
