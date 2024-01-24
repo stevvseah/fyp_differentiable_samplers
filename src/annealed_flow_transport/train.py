@@ -36,7 +36,7 @@ def value_or_none(value: str, config: ConfigDict) -> Any:
     return None
 
 def get_optimizer(initial_learning_rate: float,
-                  boundaries_and_scales: dict | None
+                  boundaries_and_scales: Tuple | None
                   ) -> optax.GradientTransformation:
   """Get an optimizer possibly with learning rate schedule.
   
@@ -44,13 +44,13 @@ def get_optimizer(initial_learning_rate: float,
   ----------
   initial_learning_rate : float
     The desired initial learning rate of an ADAM optimizer.
-  boundaries_and_scales : dict | None
-    A dictionary with key-value pairs of the form 
-    {`step`: `learning_rate`}, where `step` is an integer 
-    value of the iteration time step, and `learning_rate` 
-    is the desired new learning rate to apply at that 
-    time step. If None, the output optimizer simply has 
-    constant learning rate.
+  boundaries_and_scales : Tuple | None
+    A tuple containing a dictionary with key-value pairs 
+    of the form {`step`: `learning_rate`}, where `step` 
+    is an integer value of the iteration time step, and 
+    `learning_rate` is the desired new learning rate to 
+    apply at that time step. If None, the output 
+    optimizer simply has constant learning rate.
 
   Returns
   -------
@@ -62,7 +62,7 @@ def get_optimizer(initial_learning_rate: float,
   else:
     schedule_fn = optax.piecewise_constant_schedule(
         initial_learning_rate,
-        boundaries_and_scales)
+        boundaries_and_scales[0])
     opt = optax.chain(optax.scale_by_adam(),
                       optax.scale_by_schedule(schedule_fn), optax.scale(-1.))
     return opt

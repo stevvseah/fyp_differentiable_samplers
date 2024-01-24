@@ -8,7 +8,7 @@ class LogDensity:
   """Wrapper class for log density functions."""
   
   def __init__(self, config: ConfigDict) -> None:
-    pass
+    self.config = config
 
   def __call__(self, samples: jax.Array) -> jax.Array:
     """Abstract method to return the log density of an 
