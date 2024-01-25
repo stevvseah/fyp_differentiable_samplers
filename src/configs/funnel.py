@@ -59,9 +59,12 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'AffineInverseAutoregressiveFlow'
-  flow_config.num_hidden_layers = 3
-  flow_config.hidden_layer_dim = 30
+  flow_config.type = 'TimeEmbeddedDiagonalAffine'
+  flow_config.time_dim = 10
+
+  # flow_config.type = 'AffineInverseAutoregressiveFlow'
+  # flow_config.num_hidden_layers = 3
+  # flow_config.hidden_layer_dim = 30
 
   # flow_config.type = 'RealNVP'
   # flow_config.num_coupling_layers = 3
@@ -79,6 +82,8 @@ def get_config():
   aft_config.train_num_particles = 6000
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
+  aft_config.embed_time = True
+  aft_config.refresh_opt_state = False
 
   config.aft_config = aft_config
 

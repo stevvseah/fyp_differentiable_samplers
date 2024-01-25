@@ -131,13 +131,21 @@ def sample(config: ConfigDict):
     train_batch_size = config.aft_config.train_num_particles
     train_sampler = NormalSampler(train_batch_size, particle_dim)
 
-    flow = getattr(flows, config.flow_config.type)(config)
-    flow_apply = flow.apply
-    params = flow.init(key, sampler(key))
-
     initial_learning_rate = config.aft_config.initial_learning_rate
     boundaries_and_scales = value_or_none('boundaries_and_scales', config.aft_config)
     opt = get_optimizer(initial_learning_rate, boundaries_and_scales)
+
+    embed_time = config.aft_config.embed_time
+    refresh_opt_state = config.aft_config.refresh_opt_state
+
+    if embed_time:
+      flow = getattr(flows, 'TimeEmbedded' + config.flow_config.type)(config)
+      params = flow.init(key, sampler(key), 0.1, 0.)
+    else:
+      flow = getattr(flows, config.flow_config.type)(config)
+      params = flow.init(key, sampler(key))
+
+    flow_apply = flow.apply
 
     samples, log_weights, log_evidence, acpt_rate, \
     val_loss_history, train_loss_history = aft.apply(key_, log_density, sampler, 
@@ -146,7 +154,9 @@ def sample(config: ConfigDict):
                                                      opt, threshold, 
                                                      aft_num_train_iters, 
                                                      num_temps, betas, 
-                                                     report_interval)
+                                                     report_interval, 
+                                                     embed_time, 
+                                                     refresh_opt_state)
     misc = {'val_loss': val_loss_history, 'train_loss': train_loss_history}
 
   elif config.algo == 'craft':

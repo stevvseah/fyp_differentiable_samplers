@@ -66,7 +66,7 @@ class TimeEmbeddedDiagonalAffine(nn.Module):
 
   def setup(self):
     self.particle_dim = self.config.particle_dim
-    self.time_embedding_dim = self.config.time_dim
+    self.time_embedding_dim = self.config.flow_config.time_dim
   
   @nn.compact
   def __call__(self, x: jax.Array, beta: float, 
@@ -110,8 +110,8 @@ class TimeEmbeddedDiagonalAffine(nn.Module):
 
     shift, scale = jnp.split(nn.Dense(2*self.particle_dim, 
                                       kernel_init=nn.initializers.zeros, 
-                                      bias_init=nn.initializers.zeros), 
-                                      2, -1)(time_vec)
+                                      bias_init=nn.initializers.zeros)(time_vec), 
+                                      2, -1)
 
     chex.assert_shape(x, (None, self.particle_dim))
     x = jnp.exp(scale) * x + shift

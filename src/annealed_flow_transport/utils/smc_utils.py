@@ -252,7 +252,8 @@ def estimate_free_energy(samples: jax.Array,
                                               Tuple[jax.Array, jax.Array]], 
                          flow_params: dict, 
                          log_density: LogDensityByTemp, 
-                         beta: float, beta_prev: float) -> float:
+                         beta: float, beta_prev: float, 
+                         embed_time: bool = False) -> float:
   """Compute an estimate of the variational free energy. This is the 
   loss function for AFT and CRAFT.
   
@@ -282,6 +283,60 @@ def estimate_free_energy(samples: jax.Array,
     The temperature at the current iteration.
   beta_prev : float
     The temperature at the previous iteration.
+  embed_time : bool = False
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
+
+  Returns
+  -------
+  div : float
+    An estimate of the KL divergence between the distribution of the 
+    transported particles and the current bridging distribution.
+  """
+  if embed_time:
+     flow_apply = jax.tree_util.Partial(flow_apply, beta=beta, 
+                                        beta_prev=beta_prev)
+
+  log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply, 
+                                                               flow_params, log_density, 
+                                                               beta, beta_prev)
+  chex.assert_equal_shape([log_weight_increment, log_weights])
+  div = jnp.sum(jax.nn.softmax(log_weights) * -log_weight_increment)
+  return div
+
+def estimate_free_energy_with_time_embedding(samples: jax.Array, 
+                                             log_weights: jax.Array, 
+                                             flow_apply: Callable[[dict, jax.Array, float, float], 
+                                                                   Tuple[jax.Array, jax.Array]], 
+                                             flow_params: dict, 
+                                             log_density: LogDensityByTemp, 
+                                             beta: float, beta_prev: float) -> float:
+  """Adjusts estimate_free_energy for time-embedded samplers.
+
+  Parameters
+  ----------
+  samples : jax.Array
+    An array of shape (num_particles, particle_dim) containing the 
+    position of the particles at the current iteration.
+  log_weights : jax.Array
+    An array of shape (num_particles,) containing the normalized log 
+    weights of the particles in samples.
+  flow_apply : Callable[[dict, jax.Array, float, float], 
+                        Tuple[jax.Array, jax.Array]]
+    A function that takes as input flow_params, samples, the current 
+    annealing temperature and the previous annealing temperature to 
+    transport the input samples by the underlying flow model.
+  flow_params : dict
+    The parameters of the flow model of flow_apply.
+  log_density : LogDensityByTemp
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  beta : float
+    The temperature at the current iteration.
+  beta_prev : float
+    The temperature at the previous iteration.
   
   Returns
   -------
@@ -289,11 +344,10 @@ def estimate_free_energy(samples: jax.Array,
     An estimate of the KL divergence between the distribution of the 
     transported particles and the current bridging distribution.
   """
-  log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply, 
-                                                               flow_params, log_density, 
-                                                               beta, beta_prev)
-  chex.assert_equal_shape([log_weight_increment, log_weights])
-  div = jnp.sum(jax.nn.softmax(log_weights) * -log_weight_increment)
+  flow_apply_partial = jax.tree_util.Partial(flow_apply, beta=beta, 
+                                             beta_prev=beta_prev)
+  div = estimate_free_energy(samples, log_weights, flow_apply_partial, 
+                             flow_params, log_density, beta, beta_prev)
   return div
 
 def reweight_no_flow(log_weight_increment: jax.Array, 

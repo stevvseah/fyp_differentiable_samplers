@@ -9,6 +9,7 @@ from typing import Tuple, NamedTuple, Callable
 from .utils.aft_types import InitialDensitySampler, LogDensityByTemp
 from .utils.hmc import HMCKernel
 from .utils.smc_utils import update_step_with_flow, estimate_free_energy
+from .utils.smc_utils import estimate_free_energy_with_time_embedding
 
 class SamplesTuple(NamedTuple):
   """Container for the train, validation and test
@@ -163,11 +164,12 @@ def flow_train_step(train_samples: jax.Array, validation_samples: jax.Array,
                     train_log_weights: jax.Array, validation_log_weights: jax.Array, 
                     params: dict, opt_state: optax.OptState, beta: float, 
                     beta_prev: float, best_val_loss: float, best_params: dict, 
-                    opt: optax.GradientTransformation, 
+                    best_opt_state: optax.OptState, opt: optax.GradientTransformation, 
                     loss_val_and_grad: Callable[[jax.Array, jax.Array, 
                                                  dict, float, float], 
                                                  Tuple[float, jax.Array]]
-                    ) -> Tuple[dict, optax.GradientTransformation, dict, float, float]:
+                    ) -> Tuple[dict, optax.GradientTransformation, dict, 
+                               float, optax.OptState, float]:
   """One iteration of the training step for one temperature of the AFT algorithm.
 
   Parameters
@@ -193,6 +195,9 @@ def flow_train_step(train_samples: jax.Array, validation_samples: jax.Array,
   best_params : dict
     The parameters of the flow that produced the best validation loss 
     in the current training loop.
+  best_opt_state : optax.OptState
+    The optimization state that produced the best validation loss 
+    in the current training loop.
   opt : optax.GradientTransformation
     The optimizer used in the AFT algorithm.
   loss_val_and_grad : Callable[[jax.Array, jax.Array, dict, float, float], 
@@ -213,6 +218,9 @@ def flow_train_step(train_samples: jax.Array, validation_samples: jax.Array,
     in the current training loop so far.
   new_best_val_loss : float
     The best validation loss obtained in the current training loop so far.
+  new_best_opt_state : optax.OptState
+    The optimization state that produced the best validation loss in 
+    the current training loop so far.
   train_loss : float
     The training loss at the start of this training iteration.
   """
@@ -224,16 +232,18 @@ def flow_train_step(train_samples: jax.Array, validation_samples: jax.Array,
                                          params, beta, beta_prev)
   
   # update best validation loss and param set
-  new_best_val_loss, new_best_params = jax.lax.cond(validation_loss < best_val_loss, 
-                                                    lambda _: (validation_loss, params), 
-                                                    lambda _: (best_val_loss, best_params), 
-                                                    operand=None)
+  new_best_val_loss, \
+  new_best_params, new_best_opt_state = jax.lax.cond(validation_loss < best_val_loss, 
+                                                     lambda _: (validation_loss, params, opt_state), 
+                                                     lambda _: (best_val_loss, best_params, best_opt_state), 
+                                                     operand=None)
   
   # apply gradients for next training step
   updates, new_opt_state = opt.update(train_grad, opt_state)
   new_params = optax.apply_updates(params, updates)
 
-  return new_params, new_opt_state, new_best_params, new_best_val_loss, train_loss
+  return new_params, new_opt_state, new_best_params, \
+         new_best_val_loss, new_best_opt_state, train_loss
 
 def get_train_step(train_samples: jax.Array, validation_samples: jax.Array, 
                    train_log_weights: jax.Array, validation_log_weights: jax.Array, 
@@ -241,8 +251,9 @@ def get_train_step(train_samples: jax.Array, validation_samples: jax.Array,
                    loss_val_and_grad: Callable[[jax.Array, jax.Array, 
                                                  dict, float, float], 
                                                  Tuple[float, jax.Array]]
-                   ) -> Callable[[Tuple[dict, optax.OptState, dict, float], None], 
-                                 Tuple[Tuple[dict, optax.OptState, dict, float], jax.Array]]:
+                   ) -> Callable[[Tuple[dict, optax.OptState, dict, float, optax.OptState], None], 
+                                 Tuple[Tuple[dict, optax.OptState, dict, float, optax.OptState], 
+                                       jax.Array]]:
   """Simplifies the flow_train_step function signature by freezing arguments that 
   remain constant through the training loop within the annealing temperature.
 
@@ -271,34 +282,39 @@ def get_train_step(train_samples: jax.Array, validation_samples: jax.Array,
 
   Returns
   -------
-  train_step : Callable[[Tuple[dict, optax.OptState, dict, float], None], 
-                                 Tuple[Tuple[dict, optax.OptState, dict, float], jax.Array]]
+  train_step : Callable[[Tuple[dict, optax.OptState, dict, float, optax.OptState], None], 
+                        Tuple[Tuple[dict, optax.OptState, dict, float, optax.OptState], 
+                              jax.Array]]
     Scannable flow_train_step with simplified signature.
   """
   def train_step(state, unused_input):
-    params, opt_state, best_params, best_val_loss = state
+    params, opt_state, best_params, best_val_loss, best_opt_state = state
     new_params, new_opt_state, new_best_params, \
-    new_best_val_loss, train_loss = flow_train_step(train_samples, 
-                                                    validation_samples,
-                                                    train_log_weights, 
-                                                    validation_log_weights, 
-                                                    params, opt_state, beta, 
-                                                    beta_prev, best_val_loss, 
-                                                    best_params, opt, 
-                                                    loss_val_and_grad)
-    return (new_params, new_opt_state, new_best_params, new_best_val_loss), train_loss
+    new_best_val_loss, new_best_opt_state, train_loss = flow_train_step(train_samples, 
+                                                                        validation_samples,
+                                                                        train_log_weights, 
+                                                                        validation_log_weights, 
+                                                                        params, opt_state, beta, 
+                                                                        beta_prev, best_val_loss, 
+                                                                        best_params, best_opt_state, 
+                                                                        opt, loss_val_and_grad)
+    return (new_params, new_opt_state, new_best_params, 
+            new_best_val_loss, new_best_opt_state), train_loss
   return train_step
 
 def aft_step(key: jax.Array, samples_tuple: SamplesTuple, 
              log_weights_tuple: LogWeightsTuple, beta: float, beta_prev: float, 
-             flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
+             flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+             Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]], 
              flow_params: dict, kernel: HMCKernel, log_density: LogDensityByTemp, 
              step: int, threshold: float, num_train_iters: int, 
-             opt: optax.GradientTransformation, 
+             opt_state:optax.OptState, opt: optax.GradientTransformation, 
              loss_val_and_grad: Callable[[jax.Array, jax.Array, 
                                                  dict, float, float], 
-                                                 Tuple[float, jax.Array]]
-             ) -> Tuple[jax.Array, jax.Array, float, float, float, jax.Array]:
+                                                 Tuple[float, jax.Array]], 
+             embed_time: bool = False
+             ) -> Tuple[jax.Array, jax.Array, float, float, 
+                        float, dict, optax.OptState, jax.Array]:
   """A single iteration step of the AFT algorithm.
   
   Parameters
@@ -315,9 +331,12 @@ def aft_step(key: jax.Array, samples_tuple: SamplesTuple,
     The current annealing temperature.
   beta_prev : float
     The previous annealing temperature.
-  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+               Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
     A function that takes as input flow_params and samples to transport 
-    the input samples by the underlying flow model.
+    the input samples by the underlying flow model. If embed_time is true, 
+    then this function also takes the current and previous annealing 
+    temperatures as input.
   flow_params : dict
     The parameters of the flow model of flow_apply.
   kernel : HMCKernel
@@ -332,6 +351,8 @@ def aft_step(key: jax.Array, samples_tuple: SamplesTuple,
     The ESS threshold to trigger resampling.
   num_train_iters : int
     The number of iterations the training loop should run for.
+  opt_state: optax.OptState
+    The current optimization state.
   opt : optax.GradientTransformation
     The optimizer of the flow model for this AFT algorithm.
   loss_val_and_grad : Callable[[jax.Array, jax.Array, dict, float, float], 
@@ -340,6 +361,10 @@ def aft_step(key: jax.Array, samples_tuple: SamplesTuple,
     parameters of the flow, and the current and previous annealing 
     temperatures, and returns the value and gradient of the 
     variational free energy.
+  embed_time : bool = False
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
 
   Returns
   -------
@@ -357,6 +382,12 @@ def aft_step(key: jax.Array, samples_tuple: SamplesTuple,
   best_val_loss : float
     The validation loss of the final flow used in this annealing 
     temperature.
+  best_params : dict
+    The parameters of the flow that produced the best validation loss 
+    in the current training loop so far.
+  best_opt_state : optax.OptState
+    The optimization state that produced the best validation loss in 
+    the current training loop so far.
   train_loss : jax.Array
     The training loss history of the training phase in this annealing 
     temperature.
@@ -366,13 +397,16 @@ def aft_step(key: jax.Array, samples_tuple: SamplesTuple,
                               beta, beta_prev, opt, loss_val_and_grad)
 
   # flow training
-  init_opt_state = opt.init(flow_params)
-  (_, _, best_params, best_val_loss), train_loss = jax.lax.scan(train_step, 
-                                                                (flow_params, init_opt_state, 
-                                                                 flow_params, jnp.inf), 
-                                                                 None, num_train_iters)
-  
+  (_, _, best_params, best_val_loss, best_opt_state), train_loss = jax.lax.scan(train_step, 
+                                                                                (flow_params, 
+                                                                                 opt_state, 
+                                                                                 flow_params, jnp.inf, 
+                                                                                 opt_state), 
+                                                                                None, num_train_iters)
+      
   # samples and log weights updates
+  if embed_time:
+    flow_apply = jax.tree_util.Partial(flow_apply, beta=beta, beta_prev=beta_prev)
   samples_tuple, log_weights_tuple, log_evidence_increment, acpt_rate = update_step(key, 
                                                                                     samples_tuple, 
                                                                                     log_weights_tuple, 
@@ -383,14 +417,16 @@ def aft_step(key: jax.Array, samples_tuple: SamplesTuple,
                                                                                     beta, beta_prev, 
                                                                                     step, threshold)
   
-  return samples_tuple, log_weights_tuple, log_evidence_increment, acpt_rate, best_val_loss, train_loss
+  return samples_tuple, log_weights_tuple, log_evidence_increment, acpt_rate, \
+         best_val_loss, best_params, best_opt_state, train_loss
 
 def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensitySampler, 
           train_sampler: InitialDensitySampler, kernel: HMCKernel, 
-          flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]],
+          flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+          Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]],
           params: dict, opt: optax.GradientTransformation, threshold: float,
-          num_train_iters: int, num_temps: int, betas: jax.Array | None = None, 
-          report_interval: int = 1
+          num_train_iters: int, num_temps: int, betas: jax.Array | None, 
+          report_interval: int, embed_time: bool, refresh_opt_state: bool
           ) -> Tuple[jax.Array, jax.Array, float, jax.Array, jax.Array, jax.Array]:
   """Applies the AFT algorithm.
   
@@ -413,9 +449,12 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     this sampler should be the same as that of sampler.
   kernel : HMCKernel
     The HMC kernel to be used throughout the SMC algorithm.
-  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+               Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
     A function that takes as input flow_params and samples to transport 
-    the input samples by the underlying flow model.
+    the input samples by the underlying flow model. If embed_time is true, 
+    then this function also takes the current and previous annealing 
+    temperatures as input.
   params : dict
     The initial parameters of the flow model of flow_apply.
   opt : optax.GradientTransformation
@@ -427,13 +466,19 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     annealing temperature.
   num_temps : int
     The total number of annealing temperatures for the AFT.
-  betas : jax.Array | None = None
+  betas : jax.Array | None
     An optional argument for the array of temperatures to be used by 
-    the CRAFT algorithm. If not specified, defaults to a geometric 
-    annealing schedule.
-  report_interval : int = 1
+    the CRAFT algorithm. If None, defaults to a geometric annealing 
+    schedule.
+  report_interval : int
     The number of temperatures before reporting training status again. 
-    Has a default value of 1.
+  embed_time : bool
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
+  refresh_opt_state : bool
+    A boolean that indicates whether to refresh the optimization 
+    state after a training loop.
 
   Returns
   -------
@@ -463,21 +508,26 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
 
   def loss_fn(samples, log_weights, flow_params, beta, beta_prev):
     return estimate_free_energy(samples, log_weights, flow_apply, 
-                                flow_params, log_density, beta, beta_prev)
+                                flow_params, log_density, beta, 
+                                beta_prev, embed_time)
+  
   loss_val_and_grad = jax.value_and_grad(loss_fn, argnums=2)
 
   def specified_aft_step(key, samples_tuple, log_weights_tuple, beta, 
-                         beta_prev, params, step):
+                         beta_prev, params, opt_state, step):
     return aft_step(key, samples_tuple, log_weights_tuple, beta, beta_prev, 
                     flow_apply, params, kernel, log_density, step, threshold, 
-                    num_train_iters, opt, loss_val_and_grad)
+                    num_train_iters, opt_state, opt, loss_val_and_grad, embed_time)
   
+  opt_state = opt.init(params)
+
   # jit step
   logging.info('Jitting step...')
   jitted_aft_step = jax.jit( specified_aft_step )
   logging.info('Performing initial step redundantly for accurate timing...')
   initial_start_time = time()
-  jitted_aft_step(key_, samples_tuple, log_weights_tuple, 0.1, 0, params, 1)
+  jitted_aft_step(key_, samples_tuple, log_weights_tuple, 
+                  0.1, 0, params, opt_state, 1)
   initial_finish_time = time()
   initial_time_diff = initial_finish_time - initial_start_time
   logging.info(f'Initial step time / seconds: {initial_time_diff}')
@@ -494,10 +544,18 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
     key, key_ = jax.random.split(key)
     beta_prev = beta
     beta = betas[step-1]
-    samples_tuple, log_weights_tuple, log_evidence_increment, \
-      acpt_rate, best_val_loss, train_loss = jitted_aft_step(key_, samples_tuple, 
-                                                             log_weights_tuple, beta, 
-                                                             beta_prev, params, step)
+    samples_tuple, log_weights_tuple, log_evidence_increment, acpt_rate, \
+    best_val_loss, best_params, best_opt_state, train_loss = jitted_aft_step(key_, samples_tuple, 
+                                                                             log_weights_tuple, beta, 
+                                                                             beta_prev, params, 
+                                                                             opt_state, step)
+    
+    if embed_time:
+      params = best_params
+
+    if not refresh_opt_state:
+      opt_state = best_opt_state
+
     log_evidence += log_evidence_increment
     acpt_rate_history.append(acpt_rate)
     val_loss_history.append(best_val_loss)
