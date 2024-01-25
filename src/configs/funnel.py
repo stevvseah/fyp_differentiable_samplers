@@ -13,7 +13,7 @@ def get_config():
   config.particle_dim = 10
   config.threshold = 0.3
   config.num_temps = 9
-  config.algo = 'aft'
+  config.algo = 'craft'
   config.report_interval = 1
   
   # optional
@@ -59,7 +59,7 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'TimeEmbeddedDiagonalAffine'
+  flow_config.type = 'DiagonalAffine'
   flow_config.time_dim = 10
 
   # flow_config.type = 'AffineInverseAutoregressiveFlow'
@@ -94,7 +94,8 @@ def get_config():
 
   craft_config.num_train_iters = 200
   craft_config.initial_learning_rate = 1e-3
-  # craft_config.boundaries_and_scales = ({100: 1e-2},)
+  craft_config.boundaries_and_scales = None
+  craft_config.embed_time = True
 
   config.craft_config = craft_config
 

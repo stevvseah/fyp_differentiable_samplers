@@ -6,7 +6,7 @@ import optax
 from absl import logging
 from time import time
 import chex
-from typing import Tuple, NamedTuple, Callable
+from typing import Tuple, Callable
 from .utils.aft_types import InitialDensitySampler, LogDensityByTemp
 from .utils.hmc import HMCKernel
 from .utils.smc_utils import update_step_with_flow, estimate_free_energy
@@ -199,34 +199,37 @@ def craft_loop(key: jax.Array, sampler: InitialDensitySampler,
   return final_samples, final_log_weights, acpt_rate, \
     final_transition_params, final_opt_states, log_evidence_estimate, total_vfe
 
-def simplify_craft_loop(sampler: InitialDensitySampler, 
-                        flow_apply: Callable[[dict, jax.Array], 
-                                             Tuple[jax.Array, jax.Array]], 
-                        opt: optax.GradientTransformation, 
-                        kernel: HMCKernel, 
-                        log_density: LogDensityByTemp, 
-                        threshold: float, 
-                        num_temps: int, 
-                        loss_val_and_grad: Callable[[jax.Array, jax.Array, 
-                                                     dict, float, float], 
-                                                     Tuple[float, jax.Array]], 
-                        betas: jax.Array | None = None
-                        ) -> Callable[[jax.Array, dict, optax.OptState], 
-                                      Tuple[jax.Array, jax.Array, jax.Array, 
-                                            dict, optax.OptState, float, float]]:
-  """Simplifies the craft_loop function signature by freezing arguments that 
-  remain constant through the CRAFT training and evaluation.
-  
+def time_embedded_craft_loop(key: jax.Array, sampler: InitialDensitySampler, 
+                             flow_apply: Callable[[dict, jax.Array, float, float], 
+                                                  Tuple[jax.Array, jax.Array]], 
+                             params: dict, opt: optax.GradientTransformation, 
+                             opt_state: optax.OptState, kernel: HMCKernel, 
+                             log_density: LogDensityByTemp, threshold: float, 
+                             num_temps: int, 
+                             loss_val_and_grad: Callable[[jax.Array, jax.Array, 
+                                                          dict, float, float], 
+                                                         Tuple[float, jax.Array]], 
+                             betas: jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array, 
+                                                                      dict, optax.OptState, float, float]:
+  """A single run of the CRAFT algorithm, with flow parameter updates.
+
   Parameters
   ----------
+  key : jax.Array
+    A jax PRNG key.
   sampler : InitialDensitySampler
     A callable that takes a jax PRNG key and returns an array 
     of particles following the initial distribution.
-  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
-    A function that takes as input flow_params and samples to transport 
-    the input samples by the underlying flow model.
+  flow_apply : Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
+    A function that takes as input flow_params, samples, and the 
+    current and previous annealing temperatures to transport the 
+    input samples by the underlying flow model. 
+  params : dict
+    The parameters of the shared flow model across temperatures.
   opt : optax.GradientTransformation
     The optimizer of the flow model.
+  opt_state : optax.OptState
+    The optimizer state of the shared flow model across temperatures.
   kernel : HMCKernel
     The HMC kernel to be applied in each mutation step.
   log_density : LogDensityByTemp
@@ -250,29 +253,162 @@ def simplify_craft_loop(sampler: InitialDensitySampler,
 
   Returns
   -------
+  final_samples : jax.Array
+    The array of particles produced after the CRAFT algorithm.
+  final_log_weights : jax.Array
+    An array containing the log weights of the particles in final_samples.
+  acpt_rate : jax.Array
+    An array containing the acceptance rates of the HMC kernel 
+    at each annealing temperature.
+  new_params : dict
+    The updated flow parameters after learning from this CRAFT iteration.
+  new opt_state : optax.OptState
+    The updated optimization state of the flow parameters.
+  log_evidence_estimate : float
+    The log evidence estimate produced from this run of CRAFT (with 
+    pre-update transition_params used for the flows.)
+  total_vfe : float
+    The total loss of the flow models from this run of CRAFT.
+  """
+  key, key_ = jax.random.split(key)
+  initial_samples = sampler(key_)
+  initial_log_weights = -jnp.log(sampler.num_particles) * jnp.ones(sampler.num_particles)
+
+  def scan_step(state, per_step_input):
+    samples, log_weights, beta_prev = state
+    key, beta, step = per_step_input
+    flow_apply_partial = jax.tree_util.Partial(flow_apply, beta=beta, 
+                                               beta_prev=beta_prev)
+    new_samples, new_log_weights, \
+    log_evidence_increment, acpt_rate, vfe, vfe_grad = craft_step(key, samples, log_weights, 
+                                                                  flow_apply_partial, params, 
+                                                                  kernel, log_density, 
+                                                                  beta, beta_prev, step, 
+                                                                  threshold, 
+                                                                  loss_val_and_grad)
+    return (new_samples, new_log_weights, beta), (log_evidence_increment, acpt_rate, vfe, vfe_grad)
+  
+  initial_state = (initial_samples, initial_log_weights, 0.)
+  keys = jax.random.split(key, num=num_temps-1)
+  steps = jnp.arange(1, num_temps)
+  if not betas:
+    betas = steps/(num_temps-1)
+  chex.assert_shape(betas, (num_temps-1,))
+  per_step_input = (keys, betas, steps)
+  (final_samples, final_log_weights, _), \
+  (log_evidence_increments, acpt_rate, vfes, vfe_grads) = jax.lax.scan(scan_step, 
+                                                                        initial_state,
+                                                                        per_step_input)
+  log_evidence_estimate = jnp.sum(log_evidence_increments)
+  total_vfe = jnp.sum(vfes)
+  total_grad = jax.tree_map(lambda x: jnp.sum(x, axis=0), vfe_grads)
+
+  updates, new_opt_state = opt.update(total_grad, opt_state)
+  new_params = optax.apply_updates(params, updates)
+
+  return final_samples, final_log_weights, acpt_rate, \
+    new_params, new_opt_state, log_evidence_estimate, total_vfe
+
+def simplify_craft_loop(sampler: InitialDensitySampler, 
+                        flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+                        Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]], 
+                        opt: optax.GradientTransformation, 
+                        kernel: HMCKernel, 
+                        log_density: LogDensityByTemp, 
+                        threshold: float, 
+                        num_temps: int, 
+                        loss_val_and_grad: Callable[[jax.Array, jax.Array, 
+                                                     dict, float, float], 
+                                                     Tuple[float, jax.Array]], 
+                        betas: jax.Array | None = None,
+                        embed_time: bool = False
+                        ) -> Callable[[jax.Array, dict, optax.OptState], 
+                                      Tuple[jax.Array, jax.Array, jax.Array, 
+                                            dict, optax.OptState, float, float]]:
+  """Simplifies the craft_loop function signature by freezing arguments that 
+  remain constant through the CRAFT training and evaluation.
+  
+  Parameters
+  ----------
+  sampler : InitialDensitySampler
+    A callable that takes a jax PRNG key and returns an array 
+    of particles following the initial distribution.
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+               Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
+    A function that takes as input flow_params and samples to transport 
+    the input samples by the underlying flow model. If embed_time is true, 
+    then this function also takes the current and previous annealing 
+    temperatures as input.
+  opt : optax.GradientTransformation
+    The optimizer of the flow model.
+  kernel : HMCKernel
+    The HMC kernel to be applied in each mutation step.
+  log_density : LogDensityByTemp
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  threshold : float
+    The ESS threshold to trigger resampling.
+  num_temps : int
+    The number of annealing temperatures to be used.
+  loss_val_and_grad : Callable[[jax.Array, jax.Array, dict, float, float], 
+                               Tuple[float, jax.Array]]
+    A function that takes in an array of samples, their log weights, 
+    parameters of the flow, and the current and previous annealing 
+    temperatures, and returns the value and gradient of the 
+    variational free energy.
+  betas : jax.Array | None = None
+    An optional argument for the array of temperatures to be used by 
+    the CRAFT algorithm. If not specified, defaults to a geometric 
+    annealing schedule.
+  embed_time : bool = False
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
+
+  Returns
+  -------
   simplified_craft : Callable[[jax.Array, dict, optax.OptState], 
                               Tuple[jax.Array, jax.Array, jax.Array, 
                                     dict, optax.OptState, float, float]]
     A simplified craft_loop with most arguments frozen.
   """
-  def simplified_craft(key, transition_params, opt_states):
-    final_samples, final_log_weights, acpt_rate, \
-    final_transition_params, final_opt_states, \
-    log_evidence_estimate, total_vfe = craft_loop(key, sampler, flow_apply, 
-                                                  transition_params, opt, 
-                                                  opt_states, kernel, 
-                                                  log_density, threshold, 
-                                                  num_temps, loss_val_and_grad, 
-                                                  betas)
-    return final_samples, final_log_weights, acpt_rate, \
-           final_transition_params, final_opt_states, \
-           log_evidence_estimate, total_vfe
+  if not embed_time:
+    def simplified_craft(key, transition_params, opt_states):
+      final_samples, final_log_weights, acpt_rate, \
+      final_transition_params, final_opt_states, \
+      log_evidence_estimate, total_vfe = craft_loop(key, sampler, flow_apply, 
+                                                    transition_params, opt, 
+                                                    opt_states, kernel, 
+                                                    log_density, threshold, 
+                                                    num_temps, loss_val_and_grad, 
+                                                    betas)
+      return final_samples, final_log_weights, acpt_rate, \
+            final_transition_params, final_opt_states, \
+            log_evidence_estimate, total_vfe
+  else:
+    def simplified_craft(key, params, opt_state):
+      final_samples, final_log_weights, acpt_rate, \
+      final_params, final_opt_state, \
+      log_evidence_estimate, total_vfe = time_embedded_craft_loop(key, sampler, 
+                                                                  flow_apply, 
+                                                                  params, opt, 
+                                                                  opt_state, 
+                                                                  kernel, 
+                                                                  log_density, 
+                                                                  threshold, 
+                                                                  num_temps, 
+                                                                  loss_val_and_grad, 
+                                                                  betas)
+      return final_samples, final_log_weights, acpt_rate, \
+            final_params, final_opt_state, \
+            log_evidence_estimate, total_vfe
+    
   return simplified_craft
 
-def apply(key: jax.Array, 
-          sampler: InitialDensitySampler, 
-          flow_apply: Callable[[dict, jax.Array], 
-                               Tuple[jax.Array, jax.Array]], 
+def apply(key: jax.Array, sampler: InitialDensitySampler, 
+          flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+          Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]], 
           init_flow_params: dict,
           opt: optax.GradientTransformation, 
           log_density: LogDensityByTemp, 
@@ -280,8 +416,9 @@ def apply(key: jax.Array,
           num_temps: int, 
           threshold: float, 
           num_train_iters: int, 
-          betas: jax.Array | None = None, 
-          report_interval: int = 1
+          betas: jax.Array | None, 
+          report_interval: int,
+          embed_time: bool
           ) -> Tuple[jax.Array, jax.Array, jax.Array, 
                      float, jax.Array, jax.Array]:
   """Applies the CRAFT algorithm.
@@ -293,9 +430,12 @@ def apply(key: jax.Array,
   sampler : InitialDensitySampler
     A callable that takes a jax PRNG key and returns an array 
     of particles following the initial distribution.
-  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+               Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
     A function that takes as input flow_params and samples to transport 
-    the input samples by the underlying flow model.
+    the input samples by the underlying flow model. If embed_time is true, 
+    then this function also takes the current and previous annealing 
+    temperatures as input.
   init_flow_params : dict
     An initial set of parameters for the flow model of a single temperature 
     step, to be used as the initial parameters for the flow models of all 
@@ -316,13 +456,16 @@ def apply(key: jax.Array,
   num_train_iters : int
     The number of CRAFT training iterations to be performed during 
     the training phase.
-  betas : jax.Array | None = None
+  betas : jax.Array | None
     An optional argument for the array of temperatures to be used by 
-    the CRAFT algorithm. If not specified, defaults to a geometric 
-    annealing schedule.
-  report_interval : int = 1
+    the CRAFT algorithm. If None, defaults to a geometric annealing 
+    schedule.
+  report_interval : int
     The number of temperatures before reporting training status again. 
-    Has a default value of 1.
+  embed_time : bool
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
 
   Returns
   -------
@@ -346,24 +489,30 @@ def apply(key: jax.Array,
   key, key_ = jax.random.split(key)
   def loss_fn(samples, log_weights, flow_params, beta, beta_prev):
     return estimate_free_energy(samples, log_weights, flow_apply, 
-                                flow_params, log_density, beta, beta_prev)
+                                flow_params, log_density, beta, 
+                                beta_prev, embed_time)
   loss_val_and_grad = jax.value_and_grad(loss_fn, argnums=2)
 
   init_opt_state = opt.init(init_flow_params)
 
-  repeater = lambda x: jnp.repeat(x[None], num_temps-1, axis=0)
-  opt_states = jax.tree_util.tree_map(repeater, init_opt_state)
-  transition_params = jax.tree_util.tree_map(repeater, init_flow_params)
+  if embed_time:
+    params = init_flow_params
+    opt_state = init_opt_state
+  else:
+    repeater = lambda x: jnp.repeat(x[None], num_temps-1, axis=0)
+    opt_state = jax.tree_util.tree_map(repeater, init_opt_state)
+    params = jax.tree_util.tree_map(repeater, init_flow_params)
 
   # jit step
   logging.info('Jitting step...')
   jitted_craft_loop = jax.jit( simplify_craft_loop(sampler, flow_apply, opt, 
                                                    kernel, log_density, 
                                                    threshold, num_temps, 
-                                                   loss_val_and_grad, betas) )
+                                                   loss_val_and_grad, betas, 
+                                                   embed_time) )
   logging.info('Performing initial step redundantly for accurate timing...')
   initial_start_time = time()
-  jitted_craft_loop(key_, transition_params, opt_states)
+  jitted_craft_loop(key_, params, opt_state)
   initial_finish_time = time()
   initial_time_diff = initial_finish_time - initial_start_time
   logging.info(f'Initial step time / seconds: {initial_time_diff}')
@@ -376,9 +525,9 @@ def apply(key: jax.Array,
   for step in range(num_train_iters+1):
     key, key_ = jax.random.split(key)
     final_samples, final_log_weights, acpt_rate, \
-    transition_params, opt_states, log_evidence, total_vfe = jitted_craft_loop(key_, 
-                                                                               transition_params, 
-                                                                               opt_states)
+    params, opt_state, log_evidence, total_vfe = jitted_craft_loop(key_, 
+                                                                   params, 
+                                                                   opt_state)
     vfe_history.append(total_vfe)
     log_evidence_history.append(log_evidence)
     if step % report_interval == 0:

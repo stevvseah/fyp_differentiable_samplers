@@ -163,20 +163,27 @@ def sample(config: ConfigDict):
 
     craft_num_train_iters = config.craft_config.num_train_iters
 
-    flow = getattr(flows, config.flow_config.type)(config)
-    flow_apply = flow.apply
-    params = flow.init(key, sampler(key))
-
     initial_learning_rate = config.craft_config.initial_learning_rate
     boundaries_and_scales = value_or_none('boundaries_and_scales', config.craft_config)
     opt = get_optimizer(initial_learning_rate, boundaries_and_scales)
+
+    embed_time = config.craft_config.embed_time
+
+    if embed_time:
+      flow = getattr(flows, 'TimeEmbedded' + config.flow_config.type)(config)
+      params = flow.init(key, sampler(key), 0.1, 0.)
+    else:
+      flow = getattr(flows, config.flow_config.type)(config)
+      params = flow.init(key, sampler(key))
+
+    flow_apply = flow.apply
 
     samples, log_weights, acpt_rate, log_evidence, \
     train_loss_history, log_evidence_history = craft.apply(key_, sampler, flow_apply, 
                                                            params, opt, log_density, 
                                                            kernel, num_temps, threshold, 
                                                            craft_num_train_iters, betas, 
-                                                           report_interval)
+                                                           report_interval, embed_time)
     misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history}
   else:
     raise NotImplementedError

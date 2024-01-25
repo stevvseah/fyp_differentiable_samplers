@@ -8,12 +8,12 @@ def get_config():
   ###############
   # main config #
   ###############
-  config.seed = 2
+  config.seed = 1
   config.num_particles = 2000
   config.particle_dim = 2
-  config.threshold = 0.5
+  config.threshold = 0.3
   config.num_temps = 10
-  config.algo = 'aft'
+  config.algo = 'craft'
   config.report_interval = 1
   
   # optional
@@ -61,7 +61,7 @@ def get_config():
   flow_config = ConfigDict()
 
   flow_config.type = 'DiagonalAffine'
-  flow_config.time_dim = 5
+  flow_config.time_dim = 10
 
   config.flow_config = flow_config
 
@@ -84,9 +84,10 @@ def get_config():
   ################
   craft_config = ConfigDict()
 
-  craft_config.num_train_iters = 100
+  craft_config.num_train_iters = 50
   craft_config.initial_learning_rate = 1e-3
   craft_config.boundaries_and_scales = None
+  craft_config.embed_time = True
 
   config.craft_config = craft_config
 

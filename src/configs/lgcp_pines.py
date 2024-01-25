@@ -13,7 +13,7 @@ def get_config():
   config.particle_dim = 1024
   config.threshold = 0.3
   config.num_temps = 6
-  config.algo = 'aft'
+  config.algo = 'craft'
   config.report_interval = 1
   
   # optional
@@ -89,6 +89,7 @@ def get_config():
   craft_config.num_train_iters = 200
   craft_config.initial_learning_rate = 5e-2
   craft_config.boundaries_and_scales = ({100: 1e-2},)
+  craft_config.embed_time = False
 
   config.craft_config = craft_config
 
