@@ -62,8 +62,11 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'DiagonalAffine'
-  flow_config.time_dim = 10
+  flow_config.type = 'RealNVP'
+  flow_config.num_coupling_layers = 2
+  flow_config.num_hidden_layers_per_coupling = 1
+  flow_config.hidden_layer_dim = 200
+  flow_config.time_dim = 8
 
   config.flow_config = flow_config
 
@@ -72,11 +75,11 @@ def get_config():
   ##############
   aft_config = ConfigDict()
 
-  aft_config.num_train_iters = 200
+  aft_config.num_train_iters = 100
   aft_config.train_num_particles = 2000
-  aft_config.initial_learning_rate = 1e-2
+  aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
-  aft_config.embed_time = False
+  aft_config.embed_time = True
   aft_config.refresh_opt_state = True
 
   config.aft_config = aft_config
@@ -86,10 +89,10 @@ def get_config():
   ################
   craft_config = ConfigDict()
 
-  craft_config.num_train_iters = 200
-  craft_config.initial_learning_rate = 5e-2
-  craft_config.boundaries_and_scales = ({100: 1e-2},)
-  craft_config.embed_time = False
+  craft_config.num_train_iters = 100
+  craft_config.initial_learning_rate = 1e-3
+  craft_config.boundaries_and_scales = ({80: 5e-4},)
+  craft_config.embed_time = True
 
   config.craft_config = craft_config
 

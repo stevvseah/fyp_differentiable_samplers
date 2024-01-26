@@ -98,16 +98,16 @@ class TimeEmbeddedDiagonalAffine(nn.Module):
       the sum of the scale parameters in this module.
     """
     i = jnp.arange(self.time_embedding_dim)
-    i.at[1::2].add(-1)
+    i = i.at[1::2].add(-1)
     i /= self.time_embedding_dim
     
     embd_beta = beta / ( 1000**i )
-    embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
-    embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
+    embd_beta = embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
+    embd_beta = embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
 
     embd_beta_prev = beta_prev / ( 1000**i )
-    embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
-    embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
+    embd_beta_prev = embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
+    embd_beta_prev = embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
 
     time_vec = jnp.concatenate((embd_beta, embd_beta_prev))
 
@@ -334,7 +334,7 @@ class RealNVP(nn.Module):
       the sum of the scale parameters in this module.
     """
     mask = jnp.zeros(self.particle_dim)
-    mask.at[::2].set(1)
+    mask = mask.at[::2].set(1)
 
     log_abs_det_jac = 0
     for _ in range(self.num_coupling_layers):
@@ -401,16 +401,16 @@ class UnbatchedTimeEmbeddedAffineCouplingLayer(nn.Module):
     """
 
     i = jnp.arange(self.time_embedding_dim)
-    i.at[1::2].add(-1)
+    i = i.at[1::2].add(-1)
     i /= self.time_embedding_dim
     
     embd_beta = beta / ( 1000**i )
-    embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
-    embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
+    embd_beta = embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
+    embd_beta = embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
 
     embd_beta_prev = beta_prev / ( 1000**i )
-    embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
-    embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
+    embd_beta_prev = embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
+    embd_beta_prev = embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
 
     x_in = jnp.concatenate((x*self.mask, embd_beta, embd_beta_prev))
 
@@ -465,8 +465,8 @@ class TimeEmbeddedRealNVP(nn.Module):
   @nn.compact
   def __call__(self, x: jax.Array, beta: float, 
                beta_prev: float) -> Tuple[jax.Array, jax.Array]:
-    """Applies a sequence of affine coupling layers on a 
-    batch of particles.
+    """Applies a sequence of time-embedded affine coupling 
+    layers on a batch of particles.
     
     Parameters
     ----------
@@ -488,7 +488,7 @@ class TimeEmbeddedRealNVP(nn.Module):
       the sum of the scale parameters in this module.
     """
     mask = jnp.zeros(self.particle_dim)
-    mask.at[::2].set(1)
+    mask = mask.at[::2].set(1)
 
     log_abs_det_jac = 0
     for _ in range(self.num_coupling_layers):
@@ -500,4 +500,156 @@ class TimeEmbeddedRealNVP(nn.Module):
                                                     x, beta, beta_prev)
       log_abs_det_jac += step_ldj
     
+    return x, log_abs_det_jac
+  
+class UnbatchedInvertibleAffineCouplingLayer(nn.Module):
+  """A coupling layer that performs an affine transformation. 
+  This layer only acts on an unbatched particle, so nn.vmap is 
+  expected to be called on this layer. This layer can be 
+  inverted.
+
+  This module is not a valid flow to be selected in a sampler.
+  
+  Attributes
+  ----------
+  hidden_layer_dim : int
+    The dimension of the latent representation of the particle.
+  num_hidden_layers : int
+    The number of hidden dense layers to be applied on the particle.
+  mask : jax.Array
+    The coupling layer masking to be applied.
+  """
+  hidden_layer_dim: int
+  num_hidden_layers: int
+  mask: jax.Array
+
+  def setup(self):
+    self.scaling_factor = self.param('scaling_factor',
+                                     nn.initializers.zeros, 
+                                     (1,))
+    
+  @nn.compact
+  def __call__(self, x: jax.Array, invert: bool
+               ) -> Tuple[jax.Array, float]:
+    """Performs an affine transformation on a single particle.
+    
+    Parameters
+    ----------
+    x : jax.Array
+      A single particle.
+    invert : bool
+      A boolean to indicate whether or not to invert the flow.
+    
+    Returns
+    -------
+    x : jax.Array
+      The transported particles.
+    log_abs_det_jac : float
+      The log of the absolute determinant jacobian of the 
+      transformation in this flow, which is equivalent to 
+      the scale parameter in this module.
+    """
+
+    x_in = x*self.mask
+
+    for _ in range(self.num_hidden_layers):
+      x_in = nn.Dense(self.hidden_layer_dim, 
+                      kernel_init=nn.initializers.glorot_normal(),
+                      bias_init=nn.initializers.zeros)(x_in)
+      x_in = nn.leaky_relu(x_in)
+
+    x_in = nn.Dense(2*x.shape[0], 
+                    kernel_init=nn.initializers.zeros, 
+                    bias_init=nn.initializers.zeros)(x_in)
+    shift, scale = jnp.split(x_in, 2, 0)
+
+    # stabilize scale
+    stabilizer = jnp.exp(self.scaling_factor)
+    stabilized_scale = nn.tanh(scale/stabilizer) * stabilizer
+
+    # mask shift and scale
+    shift *= 1-self.mask
+    stabilized_scale *= 1-self.mask
+
+    if invert:
+      x = (x - shift)/jnp.exp(stabilized_scale)
+      log_abs_det_jac = -jnp.sum(stabilized_scale)
+    else:
+      x = jnp.exp(stabilized_scale) * x + shift
+      log_abs_det_jac = jnp.sum(stabilized_scale)
+
+    return x, log_abs_det_jac
+  
+InvertibleAffineCouplingLayer = nn.vmap(UnbatchedInvertibleAffineCouplingLayer, 
+                                        variable_axes={'params': None}, 
+                                        split_rngs={'params': False}, 
+                                        in_axes=(0, None))
+
+class InvertibleRealNVP(nn.Module):
+  """Real-valued non-volume preserving affine transformation 
+  on a batch of particles. The reversed direction of the flow 
+  is implemented.
+
+  This flow is not intended to be used in any AFT algorithm.
+
+  Attributes:
+  -----------
+  particle_dim : int
+    The dimension of each particle.
+  num_coupling_layers : int
+    The number of coupling layers to compose.
+  num_hidden_layers_per_coupling : int
+    The number of hidden layers in each coupling layer.
+  hidden_layer_dim : int
+    The number of dimensions in each hidden layer.
+  """
+  particle_dim: int
+  num_coupling_layers: int
+  num_hidden_layers_per_coupling: int
+  hidden_layer_dim: int
+
+  def setup(self):
+    mask = jnp.zeros(self.particle_dim)
+    mask = mask.at[::2].set(1)
+
+    masks = [0.5*(1+(-1)**i) + mask*(-1)**(i+1) for i 
+             in range(self.num_coupling_layers)]
+    self.flows = [InvertibleAffineCouplingLayer(self.hidden_layer_dim,
+                                                 self.num_hidden_layers_per_coupling, 
+                                                 masks[i]) for i in 
+                                                 range(self.num_coupling_layers)]
+  
+  @nn.compact
+  def __call__(self, x: jax.Array, invert: bool = False
+               ) -> Tuple[jax.Array, jax.Array]:
+    """Applies a sequence of invertible affine coupling 
+    layers on a batch of particles.
+    
+    Parameters
+    ----------
+    x : jax.Array
+      An array containing a batch of particles to be transported.
+    invert : bool = False
+      A boolean to indicate whether or not to reverse the flow.
+
+    Returns
+    -------
+    x : jax.Array
+      The array of transported particles.
+    log_abs_det_jac : jax.Array
+      An array of shape (num_particles,) that contains the 
+      log of the absolute determinant jacobian of the 
+      transformation in this flow, which is equivalent to 
+      the sum of the scale parameters in this module.
+    """
+    if invert:
+      flow_list = reversed(self.flows)
+    else:
+      flow_list = self.flows
+
+    log_abs_det_jac = 0
+    for flow in flow_list:
+      x, step_ldj = flow(x, invert)
+      log_abs_det_jac += step_ldj
+
     return x, log_abs_det_jac
