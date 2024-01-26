@@ -96,6 +96,19 @@ def get_config():
 
   config.craft_config = craft_config
 
+  #############
+  # vi config #
+  #############
+  vi_config = ConfigDict()
+
+  vi_config.num_train_iters = 2000
+  vi_config.initial_learning_rate = 1e-3
+  vi_config.boundaries_and_scales = None
+  vi_config.beta_list = [[0., 1.]]
+  vi_config.embed_time = False
+
+  config.vi_config = vi_config
+
   #~~~~~~~~~~~~~~~~~~~~#
   # end of config dict #
   #~~~~~~~~~~~~~~~~~~~~#

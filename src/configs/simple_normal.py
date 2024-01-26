@@ -13,8 +13,8 @@ def get_config():
   config.particle_dim = 2
   config.threshold = 0.3
   config.num_temps = 10
-  config.algo = 'craft'
-  config.report_interval = 1
+  config.algo = 'vi'
+  config.report_interval = 100
   
   # optional
   config.betas = None
@@ -60,8 +60,8 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'RealNVP'
-  flow_config.time_dim = 5
+  flow_config.type = 'DiagonalAffine'
+  flow_config.time_dim = 10
   flow_config.num_coupling_layers = 1
   flow_config.num_hidden_layers_per_coupling = 1
   flow_config.hidden_layer_dim = 5
@@ -93,6 +93,19 @@ def get_config():
   craft_config.embed_time = True
 
   config.craft_config = craft_config
+
+  #############
+  # vi config #
+  #############
+  vi_config = ConfigDict()
+
+  vi_config.num_train_iters = 2000
+  vi_config.initial_learning_rate = 1e-3
+  vi_config.boundaries_and_scales = None
+  vi_config.beta_list = [[0., 1.]]
+  vi_config.embed_time = True
+
+  config.vi_config = vi_config
 
   #~~~~~~~~~~~~~~~~~~~~#
   # end of config dict #

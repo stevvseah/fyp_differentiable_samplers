@@ -11,7 +11,7 @@ from .utils.aft_types import InitialDensitySampler, LogDensityByTemp, LogDensity
 from .utils.aft_types import InterpolatedStepSizeSchedule
 from .densities import NormalDistribution, NealsFunnel, ChallengingTwoDimensionalMixture
 from .utils.hmc import HMCKernel
-from . import smc, aft, craft
+from . import smc, aft, craft, vi
 
 def value_or_none(value: str, config: ConfigDict) -> Any:
   """Looks for a desired attribute in the input ConfigDict 
@@ -185,6 +185,39 @@ def sample(config: ConfigDict):
                                                            craft_num_train_iters, betas, 
                                                            report_interval, embed_time)
     misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history}
+
+  elif config.algo == 'vi':
+    
+    vi_num_train_iters = config.vi_config.num_train_iters
+
+    initial_learning_rate = config.vi_config.initial_learning_rate
+    boundaries_and_scales = value_or_none('boundaries_and_scales', config.vi_config)
+    opt = get_optimizer(initial_learning_rate, boundaries_and_scales)
+
+    embed_time = config.vi_config.embed_time
+
+    if embed_time:
+      flow = getattr(flows, 'TimeEmbedded' + config.flow_config.type)(config)
+      params = flow.init(key, sampler(key), 0.1, 0.)
+      opt_state = opt.init(params)
+    else:
+      flow = getattr(flows, config.flow_config.type)(config)
+      params = flow.init(key, sampler(key))
+      opt_state = opt.init(params)
+
+    flow_apply = flow.apply
+
+    for beta_prev, beta in config.vi_config.beta_list:
+      samples, log_weights, log_evidence, vfe_history, \
+      log_evidence_history, params, opt_state = vi.apply(key_, params, beta, beta_prev, 
+                                                         opt_state, opt, sampler, 
+                                                         log_density, flow_apply, 
+                                                         embed_time, vi_num_train_iters, 
+                                                         report_interval)
+    acpt_rate = None
+    misc = {'vfe_history': vfe_history, 'evidence_hist': log_evidence_history, 
+              'params': params, 'opt_state': opt_state}
+
   else:
     raise NotImplementedError
   
