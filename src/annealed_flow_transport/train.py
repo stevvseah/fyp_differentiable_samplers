@@ -3,13 +3,12 @@
 import jax
 import optax
 from ml_collections import ConfigDict
-from typing import Callable, Tuple, Any
-import flax.linen as nn
-from . import densities, flows
+from typing import Tuple, Any
+from . import densities, flows, special_target_densities
 from .samplers import NormalSampler
-from .utils.aft_types import InitialDensitySampler, LogDensityByTemp, LogDensity
+from .utils.aft_types import LogDensityByTemp
 from .utils.aft_types import InterpolatedStepSizeSchedule
-from .densities import NormalDistribution, NealsFunnel, ChallengingTwoDimensionalMixture
+from .densities import NormalDistribution
 from .utils.hmc import HMCKernel
 from . import smc, aft, craft, vi
 
@@ -206,6 +205,10 @@ def sample(config: ConfigDict):
       opt_state = opt.init(params)
 
     flow_apply = flow.apply
+
+    if hasattr(config.vi_config, 'special_target_density'):
+      log_density = getattr(special_target_densities, 
+                            config.vi_config.special_target_density)(initial_log_density)
 
     for beta_prev, beta in config.vi_config.beta_list:
       samples, log_weights, log_evidence, vfe_history, \

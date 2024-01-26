@@ -140,7 +140,53 @@ class NealsFunnel(LogDensity):
       chex.assert_equal_shape([log_density_v, log_density_other])
       return log_density_v + log_density_other
     return jax.vmap(unbatched_call)(samples)
+
+class TwoNormalMixture(LogDensity):
+  """Wrapper for the log density function of a mixture 
+  of two Gaussian distributions.
   
+  Attributes
+  ----------
+  loc1 : jax.Array
+    The mean of the first normal distribution of the mixture.
+  scale1 : jax.Array
+    The standard deviation of each component of the first distribution.
+  loc2 : jax.Array
+    The mean of the second normal distribution of the mixture.
+  scale2 : jax.Array
+    The standard deviation of each component of the second distribution.
+  """
+  def __init__(self, config: ConfigDict) -> None:
+    super().__init__(config)
+    self.loc1 = jnp.array(config.loc1)
+    self.scale1 = jnp.array(config.scale1)
+    chex.assert_equal_shape([self.loc1, self.scale1])
+    self.loc2 = jnp.array(config.loc2)
+    self.scale2 = jnp.array(config.scale2)
+    chex.assert_equal_shape([self.loc2, self.scale2])
+
+  def __call__(self, samples: jax.Array) -> jax.Array:
+    """Takes an array of particles as input and returns the 
+    log density of each particle in an array under the defined 
+    Gaussian mixture.
+    
+    Parameters
+    ----------
+    samples : jax.Array
+      An array of particles of shape (num_particles, particle_dim).
+    
+    Returns
+    -------
+    jax.Array
+      An array of shape (num_particles,) of log densities of the 
+      particles under the defined mixture.
+    """
+    chex.assert_rank(samples, 2)
+    log_densities1 = norm.logpdf(samples, self.loc1, self.scale1)
+    log_densities2 = norm.logpdf(samples, self.loc2, self.scale2)
+    chex.assert_equal_shape([samples, log_densities1, log_densities2])
+    return jnp.sum(log_densities1, axis=1) + jnp.sum(log_densities2, axis=1)
+
 class LogGaussianCoxPines(LogDensity):
   """Log Gaussian Cox process posterior in 2D for pine saplings data.
 

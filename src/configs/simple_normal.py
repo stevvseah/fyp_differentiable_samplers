@@ -12,9 +12,9 @@ def get_config():
   config.num_particles = 2000
   config.particle_dim = 2
   config.threshold = 0.3
-  config.num_temps = 10
+  config.num_temps = 11
   config.algo = 'vi'
-  config.report_interval = 100
+  config.report_interval = 1
   
   # optional
   config.betas = None
@@ -99,11 +99,13 @@ def get_config():
   #############
   vi_config = ConfigDict()
 
-  vi_config.num_train_iters = 2000
+  vi_config.num_train_iters = 500
   vi_config.initial_learning_rate = 1e-3
   vi_config.boundaries_and_scales = None
   vi_config.beta_list = [[0., 1.]]
   vi_config.embed_time = True
+
+  # vi_config.special_target_density = 'DoubleMixture'
 
   config.vi_config = vi_config
 
