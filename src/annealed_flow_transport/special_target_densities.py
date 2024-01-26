@@ -4,9 +4,9 @@ import jax
 import jax.numpy as jnp
 from ml_collections import ConfigDict
 from .utils.aft_types import LogDensityByTemp, LogDensity
-from .densities import TwoNormalMixture
+from .densities import NormalDistribution
 
-class DoubleMixture(LogDensityByTemp):
+class TwoGaussians(LogDensityByTemp):
   """Special target density to test the capacity of 
   normalizing flows to learn separate mappings by 
   embedding annealing temperatures as input dimensions.  
@@ -14,20 +14,16 @@ class DoubleMixture(LogDensityByTemp):
   def __init__(self, initial_log_density: LogDensity) -> None:
     self.initial_log_density = initial_log_density
 
-    mixture1_config = ConfigDict()
-    mixture1_config.loc1 = 5.
-    mixture1_config.scale1 = 1.
-    mixture1_config.loc2 = 3.
-    mixture1_config.scale2 = 1.
+    gaussian1_config = ConfigDict()
+    gaussian1_config.loc = 5.
+    gaussian1_config.scale = 1.
 
-    mixture2_config = ConfigDict()
-    mixture2_config.loc1 = [-3., 0.]
-    mixture2_config.scale1 = [1., 1.]
-    mixture2_config.loc2 = [0., -3.]
-    mixture2_config.scale2 = [1., 1.]
+    gaussian2_config = ConfigDict()
+    gaussian2_config.loc = [-3., 0]
+    gaussian2_config.scale = [1., 1.]
 
-    self.mixture1 = TwoNormalMixture(mixture1_config)
-    self.mixture2 = TwoNormalMixture(mixture2_config)
+    self.gaussian1 = NormalDistribution(gaussian1_config)
+    self.gaussian2 = NormalDistribution(gaussian2_config)
 
   def __call__(self, beta: float, samples: jax.Array) -> jax.Array:
     """Takes an annealing temperature and an array of 
@@ -37,10 +33,10 @@ class DoubleMixture(LogDensityByTemp):
     For beta = 0, the log density of the initial distribution 
     is returned.
 
-    For beta = 0.5, the log density of the first mixture is 
+    For beta = 0.5, the log density of the first Gaussian is 
     returned.
 
-    For beta = 1., the log density of the second mixture is 
+    For beta = 1., the log density of the second Gaussian is 
     returned.
     
     Parameters
@@ -57,6 +53,6 @@ class DoubleMixture(LogDensityByTemp):
     """
     return jnp.select([beta==0., beta==0.5, beta==1.],
                       [self.initial_log_density(samples), 
-                       self.mixture1(samples),
-                       self.mixture2(samples)],
+                       self.gaussian1(samples),
+                       self.gaussian2(samples)],
                        default=0.)
