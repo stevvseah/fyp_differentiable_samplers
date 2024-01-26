@@ -59,17 +59,18 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'DiagonalAffine'
-  flow_config.time_dim = 10
+  # flow_config.type = 'DiagonalAffine'
+  # flow_config.time_dim = 10
 
   # flow_config.type = 'AffineInverseAutoregressiveFlow'
   # flow_config.num_hidden_layers = 3
   # flow_config.hidden_layer_dim = 30
 
-  # flow_config.type = 'RealNVP'
-  # flow_config.num_coupling_layers = 3
-  # flow_config.hidden_layer_dim = 30
-  # flow_config.num_hidden_layers_per_coupling = 2
+  flow_config.type = 'RealNVP'
+  flow_config.num_coupling_layers = 1
+  flow_config.hidden_layer_dim = 10
+  flow_config.num_hidden_layers_per_coupling = 2
+  flow_config.time_dim = 10
 
   config.flow_config = flow_config
 

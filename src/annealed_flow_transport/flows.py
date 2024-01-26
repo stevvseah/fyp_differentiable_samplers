@@ -57,6 +57,9 @@ class TimeEmbeddedDiagonalAffine(nn.Module):
   diagonal matrix that embeds the current and previous 
   annealing temperature as parameters.
 
+  Set the embed_time attribute to True and flow type to 
+  DiagonalAffine in the config file to select this flow.
+
   Attributes:
   -----------
   config : ConfigDict
@@ -339,6 +342,162 @@ class RealNVP(nn.Module):
       x, step_ldj = AffineCouplingLayer(self.hidden_layer_dim, 
                                    self.num_hidden_layers, 
                                    mask)(x)
+      log_abs_det_jac += step_ldj
+    
+    return x, log_abs_det_jac
+  
+class UnbatchedTimeEmbeddedAffineCouplingLayer(nn.Module):
+  """A coupling layer that performs an affine transformation. 
+  This layer only acts on an unbatched particle, so nn.vmap is 
+  expected to be called on this layer. This layer takes in the 
+  current and previous annealing temperatures as input.
+
+  This module is not a valid flow to be selected in a sampler.
+  
+  Attributes
+  ----------
+  hidden_layer_dim : int
+    The dimension of the latent representation of the particle.
+  num_hidden_layers : int
+    The number of hidden dense layers to be applied on the particle.
+  mask : jax.Array
+    The coupling layer masking to be applied.
+  time_embedding_dim : int
+    The number of dimensions to express each of the current and 
+    previous annealing temperatures as.
+  """
+  hidden_layer_dim: int
+  num_hidden_layers: int
+  mask: jax.Array
+  time_embedding_dim: int
+
+  def setup(self):
+    self.scaling_factor = self.param('scaling_factor',
+                                     nn.initializers.zeros, 
+                                     (1,))
+    
+  @nn.compact
+  def __call__(self, x: jax.Array, beta: float, 
+               beta_prev: float) -> Tuple[jax.Array, float]:
+    """Performs an affine transformation on a single particle.
+    
+    Parameters
+    ----------
+    x : jax.Array
+      A single particle.
+    beta : float
+      The current annealing temperature.
+    beta_prev : float
+      The previous annealing temperature.
+    
+    Returns
+    -------
+    x : jax.Array
+      The transported particles.
+    log_abs_det_jac : float
+      The log of the absolute determinant jacobian of the 
+      transformation in this flow, which is equivalent to 
+      the scale parameter in this module.
+    """
+
+    i = jnp.arange(self.time_embedding_dim)
+    i.at[1::2].add(-1)
+    i /= self.time_embedding_dim
+    
+    embd_beta = beta / ( 1000**i )
+    embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
+    embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
+
+    embd_beta_prev = beta_prev / ( 1000**i )
+    embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
+    embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
+
+    x_in = jnp.concatenate((x*self.mask, embd_beta, embd_beta_prev))
+
+    for _ in range(self.num_hidden_layers):
+      x_in = nn.Dense(self.hidden_layer_dim, 
+                      kernel_init=nn.initializers.glorot_normal(),
+                      bias_init=nn.initializers.zeros)(x_in)
+      x_in = nn.leaky_relu(x_in)
+
+    x_in = nn.Dense(2*x.shape[0], 
+                    kernel_init=nn.initializers.zeros, 
+                    bias_init=nn.initializers.zeros)(x_in)
+    shift, scale = jnp.split(x_in, 2, 0)
+
+    # stabilize scale
+    stabilizer = jnp.exp(self.scaling_factor)
+    stabilized_scale = nn.tanh(scale/stabilizer) * stabilizer
+
+    # mask shift and scale
+    shift *= 1-self.mask
+    stabilized_scale *= 1-self.mask
+
+    x = jnp.exp(stabilized_scale) * x + shift
+    log_abs_det_jac = jnp.sum(stabilized_scale)
+
+    return x, log_abs_det_jac
+  
+TimeEmbeddedAffineCouplingLayer = nn.vmap(UnbatchedTimeEmbeddedAffineCouplingLayer, 
+                                          variable_axes={'params': None}, 
+                                          split_rngs={'params': False}, 
+                                          in_axes=(0, None, None))
+
+class TimeEmbeddedRealNVP(nn.Module):
+  """Real-valued non-volume preserving affine transformation 
+  on a batch of particles, using the current and previous 
+  annealing temperatures.
+
+  Attributes:
+  -----------
+  config : ConfigDict
+  The config dict related to flow configurations.
+  """
+  config: ConfigDict
+
+  def setup(self):
+    self.num_coupling_layers = self.config.flow_config.num_coupling_layers
+    self.hidden_layer_dim = self.config.flow_config.hidden_layer_dim
+    self.num_hidden_layers = self.config.flow_config.num_hidden_layers_per_coupling
+    self.particle_dim = self.config.particle_dim
+    self.time_embedding_dim = self.config.flow_config.time_dim
+
+  @nn.compact
+  def __call__(self, x: jax.Array, beta: float, 
+               beta_prev: float) -> Tuple[jax.Array, jax.Array]:
+    """Applies a sequence of affine coupling layers on a 
+    batch of particles.
+    
+    Parameters
+    ----------
+    x : jax.Array
+      An array containing a batch of particles to be transported.
+    beta : float
+      The current annealing temperature.
+    beta_prev : float
+      The previous annealing temperature.
+
+    Returns
+    -------
+    x : jax.Array
+      The array of transported particles.
+    log_abs_det_jac : jax.Array
+      An array of shape (num_particles,) that contains the 
+      log of the absolute determinant jacobian of the 
+      transformation in this flow, which is equivalent to 
+      the sum of the scale parameters in this module.
+    """
+    mask = jnp.zeros(self.particle_dim)
+    mask.at[::2].set(1)
+
+    log_abs_det_jac = 0
+    for _ in range(self.num_coupling_layers):
+      mask = 1-mask
+      x, step_ldj = TimeEmbeddedAffineCouplingLayer(self.hidden_layer_dim, 
+                                                    self.num_hidden_layers, 
+                                                    mask, 
+                                                    self.time_embedding_dim)(
+                                                    x, beta, beta_prev)
       log_abs_det_jac += step_ldj
     
     return x, log_abs_det_jac

@@ -211,7 +211,7 @@ def time_embedded_craft_loop(key: jax.Array, sampler: InitialDensitySampler,
                                                          Tuple[float, jax.Array]], 
                              betas: jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array, 
                                                                       dict, optax.OptState, float, float]:
-  """A single run of the CRAFT algorithm, with flow parameter updates.
+  """A single run of the time-embedded CRAFT algorithm, with flow parameter updates.
 
   Parameters
   ----------
