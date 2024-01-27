@@ -8,7 +8,7 @@ import numpy as np
 from typing import Sequence
 
 FLAGS = flags.FLAGS
-config_flags.DEFINE_config_file('config', './configs/two_moons.py', 
+config_flags.DEFINE_config_file('config', './configs/special/two_moons.py', 
                                 'Training configuration.')
 
 def main(argv: Sequence[str]) -> None:
