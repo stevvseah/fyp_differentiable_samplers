@@ -66,13 +66,15 @@ def get_optimizer(initial_learning_rate: float,
                       optax.scale_by_schedule(schedule_fn), optax.scale(-1.))
     return opt
 
-def sample(config: ConfigDict):
+def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
   """Accesses the input config dict to configure a sampling 
   algorithm and run it.
 
   Parameters
   ----------
   config : ConfigDict
+    The config dict specifying the configurations of the 
+    training and algorithm.
 
   Returns
   -------

@@ -603,12 +603,15 @@ class InvertibleRealNVP(nn.Module):
   hidden_layer_dim : int
     The number of dimensions in each hidden layer.
   """
-  particle_dim: int
-  num_coupling_layers: int
-  num_hidden_layers_per_coupling: int
-  hidden_layer_dim: int
+  config: ConfigDict
 
   def setup(self):
+
+    self.particle_dim = self.config.particle_dim
+    self.num_coupling_layers = self.config.flow_config.num_coupling_layers
+    self.num_hidden_layers_per_coupling = self.config.flow_config.num_hidden_layers_per_coupling
+    self.hidden_layer_dim = self.config.flow_config.hidden_layer_dim
+
     mask = jnp.zeros(self.particle_dim)
     mask = mask.at[::2].set(1)
 
