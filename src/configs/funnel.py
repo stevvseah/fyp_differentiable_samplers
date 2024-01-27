@@ -13,11 +13,15 @@ def get_config():
   config.particle_dim = 10
   config.threshold = 0.3
   config.num_temps = 9
-  config.algo = 'craft'
+  config.algo = 'smc'
   config.report_interval = 1
   
   # optional
   config.betas = None
+
+  # for running on experiment.py
+  config.repetitions = 5
+  config.save_results_path = 'results/smc1.csv'
 
   ##########################
   # initial density config #
