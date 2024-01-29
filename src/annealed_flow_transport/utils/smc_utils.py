@@ -665,7 +665,8 @@ def adaptive_temp_search(samples: jax.Array, log_weights: jax.Array,
     return log_conditional_ess(log_weights, log_weight_increment) - jnp.log(threshold*num_particles)
 
   bisection_step_partial = jax.tree_util.Partial(bisection_step, eval_func=eval_func)
-  (_, beta_next), _ = jax.lax.scan(bisection_step_partial, (beta, 1.), None, num_search_iters)
+  (a, b), _ = jax.lax.scan(bisection_step_partial, (beta, 1.), None, num_search_iters)
+  beta_next = 0.5*(a + b)
   return beta_next
 
 def adaptive_temp_search_with_flow(samples: jax.Array, 
