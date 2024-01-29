@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from absl import logging
 from time import time
-from .utils.smc_utils import update_step_no_flow
+from .utils.smc_utils import update_step_no_flow, adaptive_temp_search
 from .utils.hmc import HMCKernel
 from .utils.aft_types import LogDensityByTemp, InitialDensitySampler
 from typing import Callable, Tuple
@@ -120,8 +120,8 @@ def fast_smc_apply(key: jax.Array, log_density: LogDensityByTemp,
 def apply(key: jax.Array, log_density: LogDensityByTemp, 
               initial_sampler: InitialDensitySampler, 
               kernel: HMCKernel, threshold: float, 
-              num_temps: int, betas: jax.Array | None = None, 
-              report_interval: int = 1
+              num_temps: int, betas: jax.Array | None, 
+              report_interval: int
               ) -> Tuple[jax.Array, jax.Array, float, jax.Array]:
   """Applies the SMC algorithm.
 
@@ -143,13 +143,12 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
     The ESS threshold to trigger resampling.
   num_temps : int
     The total number of annealing temperatures for the SMC.
-  betas : jax.Array | None = None
+  betas : jax.Array | None
     An optional argument for the array of temperatures to be used by 
-    the CRAFT algorithm. If not specified, defaults to a geometric 
+    the CRAFT algorithm. If specified as None, defaults to a geometric 
     annealing schedule.
-  report_interval : int = 1
+  report_interval : int
     The number of temperatures before reporting training status again. 
-    Has a default value of 1.
 
   Returns
   -------
@@ -194,6 +193,101 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
     key, key_ = jax.random.split(key)
     beta_prev = beta
     beta = betas[step-1]
+    samples, log_weights, log_evidence_increment, acpt_rate = smc_step(key_, samples, 
+                                                                       log_weights, beta, 
+                                                                       beta_prev, step)
+    log_evidence += log_evidence_increment
+    acpt_rate_history.append(acpt_rate)
+    if step % report_interval == 0:
+      logging.info(f"Step {step:03d}: beta {beta:.5f} \t acceptance rate {acpt_rate:.5f}")
+  finish_time = time()
+  train_time_diff = finish_time - start_time
+
+  # end of training info dump
+  logging.info(f"Training time / seconds : {train_time_diff}")
+  logging.info(f"Log evidence estimate : {log_evidence}")
+
+  acpt_rate_history = jnp.array(acpt_rate_history)
+
+  return samples, log_weights, log_evidence, acpt_rate_history
+
+def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, 
+                   initial_sampler: InitialDensitySampler, 
+                   kernel: HMCKernel, threshold: float, 
+                   report_interval: int, num_search_iters: int, 
+                   adaptive_threshold: float
+                   ) -> Tuple[jax.Array, jax.Array, float, jax.Array]:
+  """Applies an adaptive variant of SMC algorithm.
+
+  Parameters
+  ----------
+  key : jax.Array
+    A jax PRNG key.
+  log_density : LogDensityByTemp
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  initial_sampler : InitialDensitySampler
+    A callable that takes a jax PRNG key as input, and outputs an array of 
+    shape (num_particles, particle_dim) containing randomly generated 
+    particles under the initial distribution.
+  kernel : HMCKernel
+    The HMC kernel to be used throughout the SMC algorithm.
+  threshold : float
+    The ESS threshold to trigger resampling.
+  report_interval : int
+    The number of temperatures before reporting training status again. 
+  num_search_iters : int
+    The number of iterations to run the bisection method search for 
+    the next annealing temperature in the adaptive SMC algorithm.
+  adaptive_threshold : float
+    The target conditional effective sample size for the selection 
+    of the next annealing temperature.
+
+  Returns
+  -------
+  final_samples : jax.Array
+    An array of shape (num_particles, particle_dim) containing the 
+    final positions of the particles.
+  final_log_weights : jax.Array
+    An array of shape (num_particles,) containing the log weights of 
+    the particles in final_sample.
+  log_evidence_estimate : float
+    An estimate of the log evidence of the target density.
+  acpt_rate_history : jax.Array
+    An array of shape (num_temps-1,) containing the average acceptance 
+    rate of the HMC kernel for each temperature.
+  """
+
+  # initialize starting variables
+  key, key_ = jax.random.split(key)
+  batch_size = initial_sampler.num_particles
+  samples = initial_sampler(key_)
+  log_weights = -jnp.log(batch_size) * jnp.ones(batch_size)
+
+  # jit step
+  logging.info('Jitting step...')
+  smc_step = jax.jit( get_smc_step(kernel, log_density, threshold) )
+  logging.info('Performing initial step redundantly for accurate timing...')
+  initial_start_time = time()
+  smc_step(key_, samples, log_weights, 0.1, 0, 1)
+  initial_finish_time = time()
+  initial_time_diff = initial_finish_time - initial_start_time
+  logging.info(f'Initial step time / seconds: {initial_time_diff}')
+
+  # training step
+  beta = 0.
+  log_evidence = 0.
+  step = 0
+  acpt_rate_history = []
+  logging.info('Launching training...')
+  start_time = time()
+  while beta < 1.:
+    key, key_ = jax.random.split(key)
+    step += 1
+    beta_prev = beta
+    beta = adaptive_temp_search(samples, log_weights, beta, log_density, 
+                                num_search_iters, adaptive_threshold)
     samples, log_weights, log_evidence_increment, acpt_rate = smc_step(key_, samples, 
                                                                        log_weights, beta, 
                                                                        beta_prev, step)

@@ -8,8 +8,8 @@ def get_config():
   ###############
   # main config #
   ###############
-  config.seed = 1
-  config.num_particles = 2000
+  config.seed = 8
+  config.num_particles = 5000
   config.particle_dim = 10
   config.threshold = 0.3
   config.num_temps = 9
@@ -57,6 +57,17 @@ def get_config():
   kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
 
   config.kernel_config = kernel_config
+
+  ##############
+  # smc config #
+  ##############
+  smc_config = ConfigDict()
+
+  smc_config.adaptive = True
+  smc_config.num_adaptive_search_iters = 50
+  smc_config.adaptive_threshold = 0.8
+  
+  config.smc_config = smc_config
 
   ###############
   # flow config #

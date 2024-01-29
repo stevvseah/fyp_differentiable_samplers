@@ -90,40 +90,57 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
   """
   num_particles = config.num_particles
   particle_dim = config.particle_dim
-  threshold = config.threshold
-  num_temps = config.num_temps
-  betas = value_or_none('temperature_schedule', config)
   report_interval = config.report_interval
+
+  if config.algo != 'vi':
+    threshold = config.threshold
+    num_temps = value_or_none('num_temps', config)
+    betas = value_or_none('temperature_schedule', config)
 
   # initial distribution config
   loc = config.initial_density_config.loc
   scale = config.initial_density_config.scale
   initial_log_density = NormalDistribution(config.initial_density_config)
   sampler = NormalSampler(num_particles, particle_dim, loc, scale)
-  final_log_density = getattr(densities, 
-                              config.final_density_config.density)(
-                                config.final_density_config)
-  log_density = LogDensityByTemp(initial_log_density, final_log_density)
+  if hasattr(config, 'special_target_density'):
+    log_density = getattr(special_target_densities, 
+                          config.special_target_density)(initial_log_density)
+  else:
+    final_log_density = getattr(densities, 
+                                config.final_density_config.density)(
+                                  config.final_density_config)
+    log_density = LogDensityByTemp(initial_log_density, final_log_density)
 
   # kernel config
-  num_leapfrog_iters = config.kernel_config.num_leapfrog_iters
-  num_hmc_iters = config.kernel_config.num_hmc_iters
-  if hasattr(config, 'interp_step_times') and hasattr(config, 'interp_step_sizes'):
-    epsilon = InterpolatedStepSizeSchedule(config.kernel_config.interp_step_times,  
-                                           config.kernel_config.interp_step_sizes, 
-                                           num_temps)
-  else: 
-    epsilon = config.kernel_config.step_size
-  kernel = HMCKernel(log_density, epsilon, num_leapfrog_iters, num_hmc_iters)
+  if config.algo != 'vi':
+    num_leapfrog_iters = config.kernel_config.num_leapfrog_iters
+    num_hmc_iters = config.kernel_config.num_hmc_iters
+    if hasattr(config, 'interp_step_times') and hasattr(config, 'interp_step_sizes'):
+      epsilon = InterpolatedStepSizeSchedule(config.kernel_config.interp_step_times,  
+                                            config.kernel_config.interp_step_sizes, 
+                                            num_temps)
+    else: 
+      epsilon = config.kernel_config.step_size
+    kernel = HMCKernel(log_density, epsilon, num_leapfrog_iters, num_hmc_iters)
 
   key = jax.random.key(config.seed)
   key, key_ = jax.random.split(key)
 
   if config.algo == 'smc':
-    samples, log_weights, log_evidence, acpt_rate = smc.apply(key_, log_density, 
-                                                              sampler, kernel, 
-                                                              threshold, num_temps, 
-                                                              betas, report_interval)
+    if value_or_none('adaptive', config.smc_config):
+      num_search_iters = config.smc_config.num_adaptive_search_iters
+      adaptive_threshold = config.smc_config.adaptive_threshold
+      samples, log_weights, log_evidence, acpt_rate = smc.apply_adaptive(key_, log_density, 
+                                                                         sampler, kernel, 
+                                                                         threshold, 
+                                                                         report_interval, 
+                                                                         num_search_iters, 
+                                                                         adaptive_threshold)
+    else:
+      samples, log_weights, log_evidence, acpt_rate = smc.apply(key_, log_density, 
+                                                                sampler, kernel, 
+                                                                threshold, num_temps, 
+                                                                betas, report_interval)
     misc = {}
   
   elif config.algo == 'aft':
@@ -207,10 +224,6 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
       opt_state = opt.init(params)
 
     flow_apply = flow.apply
-
-    if hasattr(config.vi_config, 'special_target_density'):
-      log_density = getattr(special_target_densities, 
-                            config.vi_config.special_target_density)(initial_log_density)
 
     for beta_prev, beta in config.vi_config.beta_list:
       samples, log_weights, log_evidence, vfe_history, \

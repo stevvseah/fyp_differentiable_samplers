@@ -13,7 +13,7 @@ def get_config():
   config.particle_dim = 2
   config.threshold = 0.3
   config.num_temps = 11
-  config.algo = 'vi'
+  config.algo = 'smc'
   config.report_interval = 1
   
   # optional
@@ -54,6 +54,17 @@ def get_config():
   # kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
 
   config.kernel_config = kernel_config
+
+  ##############
+  # smc config #
+  ##############
+  smc_config = ConfigDict()
+
+  smc_config.adaptive = True
+  smc_config.num_adaptive_search_iters = 50
+  smc_config.adaptive_threshold = 0.5
+  
+  config.smc_config = smc_config
 
   ###############
   # flow config #
