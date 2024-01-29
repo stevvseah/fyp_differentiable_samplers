@@ -216,7 +216,8 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
                    kernel: HMCKernel, threshold: float, 
                    report_interval: int, num_search_iters: int, 
                    adaptive_threshold: float
-                   ) -> Tuple[jax.Array, jax.Array, float, jax.Array]:
+                   ) -> Tuple[jax.Array, jax.Array, float, 
+                              jax.Array, jax.Array]:
   """Applies an adaptive variant of SMC algorithm.
 
   Parameters
@@ -257,6 +258,8 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
   acpt_rate_history : jax.Array
     An array of shape (num_temps-1,) containing the average acceptance 
     rate of the HMC kernel for each temperature.
+  beta_history : jax.Array
+    An array containing the annealing temperatures adaptively selected.
   """
 
   # initialize starting variables
@@ -280,6 +283,7 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
   log_evidence = 0.
   step = 0
   acpt_rate_history = []
+  beta_history = []
   logging.info('Launching training...')
   start_time = time()
   while beta < 1.:
@@ -293,6 +297,7 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
                                                                        beta_prev, step)
     log_evidence += log_evidence_increment
     acpt_rate_history.append(acpt_rate)
+    beta_history.append(beta)
     if step % report_interval == 0:
       logging.info(f"Step {step:03d}: beta {beta:.5f} \t acceptance rate {acpt_rate:.5f}")
   finish_time = time()
@@ -303,5 +308,6 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
   logging.info(f"Log evidence estimate : {log_evidence}")
 
   acpt_rate_history = jnp.array(acpt_rate_history)
+  beta_history = jnp.array(beta_history)
 
-  return samples, log_weights, log_evidence, acpt_rate_history
+  return samples, log_weights, log_evidence, acpt_rate_history, beta_history

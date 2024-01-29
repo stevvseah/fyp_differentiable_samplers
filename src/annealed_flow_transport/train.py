@@ -130,18 +130,17 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
     if value_or_none('adaptive', config.smc_config):
       num_search_iters = config.smc_config.num_adaptive_search_iters
       adaptive_threshold = config.smc_config.adaptive_threshold
-      samples, log_weights, log_evidence, acpt_rate = smc.apply_adaptive(key_, log_density, 
-                                                                         sampler, kernel, 
-                                                                         threshold, 
-                                                                         report_interval, 
-                                                                         num_search_iters, 
-                                                                         adaptive_threshold)
+      samples, log_weights, log_evidence, \
+      acpt_rate, beta_history = smc.apply_adaptive(key_, log_density, sampler, kernel, 
+                                                   threshold, report_interval, 
+                                                   num_search_iters, adaptive_threshold)
+      misc = {'temperatures': beta_history}
     else:
       samples, log_weights, log_evidence, acpt_rate = smc.apply(key_, log_density, 
                                                                 sampler, kernel, 
                                                                 threshold, num_temps, 
                                                                 betas, report_interval)
-    misc = {}
+      misc = {}
   
   elif config.algo == 'aft':
 
