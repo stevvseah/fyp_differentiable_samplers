@@ -35,9 +35,6 @@ def get_config():
 
   flow_config.type = 'DiagonalAffine'
   flow_config.time_dim = 10
-  flow_config.num_coupling_layers = 3
-  flow_config.num_hidden_layers_per_coupling = 2
-  flow_config.hidden_layer_dim = 5
 
   config.flow_config = flow_config
 
