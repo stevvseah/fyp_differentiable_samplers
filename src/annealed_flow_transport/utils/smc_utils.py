@@ -566,27 +566,19 @@ def update_step_with_flow(key: jax.Array, samples: jax.Array, log_weights: jax.A
 
   return mcmc_samples, resampled_log_weights, log_evidence_increment, acceptance_rate
 
-def log_conditional_ess(samples: jax.Array, log_weights: jax.Array, 
-                        beta: float, beta_next: float, 
-                        log_density: LogDensityByTemp) -> float:
+def log_conditional_ess(log_weights: jax.Array, 
+                        log_weight_increment: jax.Array) -> float:
   """Computes the log conditional effective sample size as defined in 
   Zhou, Y., Johansen, A. M., & Aston, J. A. (2016) 
   (https://www.tandfonline.com/doi/full/10.1080/10618600.2015.1060885)
 
   Parameters
   ----------
-  samples : jax.Array
-    An array storing the current positions of a batch of particles.
   log_weights : jax.Array
-    The log weights of the particles in samples.
-  beta : float
-    The current annealing temperature.
-  beta_next : float
-    The next annealing temperature.
-  log_density : LogDensityByTemp
-    A function taking as input a temperature and the array of particles, 
-    returning the unnormalized density of the particles under the bridging 
-    distribution at the input temperature.
+    The normalized log weights of a batch of particles.
+  log_weight_increment : jax.Array
+    An array of shape (num_particles,) containing the unnormalized 
+    importance weights of the particles for the current temperature.
   
   Returns
   -------
@@ -594,9 +586,8 @@ def log_conditional_ess(samples: jax.Array, log_weights: jax.Array,
     The log conditional effective sample size.
   """
   chex.assert_rank(log_weights, 1)
-  num_particles = log_weights.shape[0]
-  log_weight_increment = log_density(beta_next, samples) - log_density(beta, samples)
   chex.assert_equal_shape([log_weights, log_weight_increment])
+  num_particles = log_weights.shape[0]
   log_numerator = jnp.log(num_particles) + 2*logsumexp(log_weights + log_weight_increment)
   log_denominator = logsumexp( log_weights + 2*log_weight_increment )
   log_cess = log_numerator - log_denominator
@@ -606,6 +597,9 @@ def bisection_step(boundaries: Tuple[float, float], unused_input: None,
                    eval_func: Callable) -> Tuple[Tuple[float, float], None]:
   """A single step of the bisection method, designed to be 
   jax scanned.
+
+  This implementation of bisection step assumes eval_func 
+  to be 
 
   Parameters
   ----------
@@ -626,9 +620,11 @@ def bisection_step(boundaries: Tuple[float, float], unused_input: None,
   """
   a, b = boundaries
   m = 0.5*(a + b)
-  a_new = jax.lax.cond(eval_func(a)*eval_func(m) <= 0, lambda a: m, lambda a: a, a)
-  b_new = jax.lax.cond(eval_func(b)*eval_func(m) <= 0, lambda b: m, lambda b: b, b)
-  a_new, b_new = jax.lax.cond(eval_func(a)*eval_func(b) >= 0, lambda x, y: (a, b), 
+  a_new = jax.lax.cond(eval_func(b)*eval_func(m) <= 0., lambda x: m, lambda x: a, a)
+  b_new = jax.lax.cond(eval_func(a)*eval_func(m) <= 0., lambda y: m, lambda y: b, b)
+  a_new, b_new = jax.lax.cond(eval_func(a)*eval_func(b) > 0, lambda x, y: (b, b), 
+                              lambda x, y: (x, y), a_new, b_new)
+  a_new, b_new = jax.lax.cond(eval_func(m) == 0., lambda x, y: (m, m), 
                               lambda x, y: (x, y), a_new, b_new)
   return (a_new, b_new), None
 
@@ -663,9 +659,58 @@ def adaptive_temp_search(samples: jax.Array, log_weights: jax.Array,
   """
   chex.assert_equal(samples.shape[0], log_weights.shape[0])
   num_particles = log_weights.shape[0]
-  eval_func = lambda x: log_conditional_ess(samples, log_weights, 
-                                            beta, x, log_density
-                                            ) - jnp.log(threshold*num_particles)
+  
+  def eval_func(x):
+    log_weight_increment = get_log_weight_increment_no_flow(samples, log_density, x, beta)
+    return log_conditional_ess(log_weights, log_weight_increment) - jnp.log(threshold*num_particles)
+
+  bisection_step_partial = jax.tree_util.Partial(bisection_step, eval_func=eval_func)
+  (_, beta_next), _ = jax.lax.scan(bisection_step_partial, (beta, 1.), None, num_search_iters)
+  return beta_next
+
+def adaptive_temp_search_with_flow(samples: jax.Array, 
+                                   flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
+                                   flow_params: dict, log_weights: jax.Array, 
+                                   beta: float, log_density: LogDensityByTemp, 
+                                   num_search_iters: int, threshold: float) -> float:
+  """Searches for the next annealing temperature by doing a bisection method 
+  search for the value of beta_next that produces a conditional ESS equal to 
+  the input threshold value multiplied by the number of particles.
+
+  Parameters
+  ----------
+  samples : jax.Array
+    An array storing the current positions of a batch of particles.
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
+    A function that applies the flow.
+  flow_params : dict
+    The parameters of the flow.
+  log_weights : jax.Array
+    The log weights of the particles in samples.
+  beta : float
+    The current annealing temperature.
+  log_density : LogDensityByTemp
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  num_search_iter : int
+    The number of bisection steps to iterate through in the search.
+  threshold : float
+    Ratio of the target CESS to the number of particles in the batch.
+
+  Returns
+  -------
+  beta_next : float
+    The next annealing temperature.
+  """
+  chex.assert_equal(samples.shape[0], log_weights.shape[0])
+  num_particles = log_weights.shape[0]
+  
+  def eval_func(x):
+    log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply, flow_params, 
+                                                                 log_density, x, beta)
+    return log_conditional_ess(log_weights, log_weight_increment) - jnp.log(threshold*num_particles)
+
   bisection_step_partial = jax.tree_util.Partial(bisection_step, eval_func=eval_func)
   (_, beta_next), _ = jax.lax.scan(bisection_step_partial, (beta, 1.), None, num_search_iters)
   return beta_next
