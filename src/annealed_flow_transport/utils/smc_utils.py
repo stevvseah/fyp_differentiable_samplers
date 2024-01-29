@@ -670,10 +670,12 @@ def adaptive_temp_search(samples: jax.Array, log_weights: jax.Array,
   return beta_next
 
 def adaptive_temp_search_with_flow(samples: jax.Array, 
-                                   flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]], 
+                                   flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+                                   Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]], 
                                    flow_params: dict, log_weights: jax.Array, 
                                    beta: float, log_density: LogDensityByTemp, 
-                                   num_search_iters: int, threshold: float) -> float:
+                                   num_search_iters: int, threshold: float, 
+                                   embed_time: bool) -> float:
   """Searches for the next annealing temperature by doing a bisection method 
   search for the value of beta_next that produces a conditional ESS equal to 
   the input threshold value multiplied by the number of particles.
@@ -682,8 +684,12 @@ def adaptive_temp_search_with_flow(samples: jax.Array,
   ----------
   samples : jax.Array
     An array storing the current positions of a batch of particles.
-  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]]
-    A function that applies the flow.
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+               Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
+    A function that takes as input flow_params and samples to transport 
+    the input samples by the underlying flow model. If embed_time is true, 
+    then this function also takes the current and previous annealing 
+    temperatures as input.
   flow_params : dict
     The parameters of the flow.
   log_weights : jax.Array
@@ -698,6 +704,10 @@ def adaptive_temp_search_with_flow(samples: jax.Array,
     The number of bisection steps to iterate through in the search.
   threshold : float
     Ratio of the target CESS to the number of particles in the batch.
+  embed_time : bool
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
 
   Returns
   -------
@@ -707,10 +717,18 @@ def adaptive_temp_search_with_flow(samples: jax.Array,
   chex.assert_equal(samples.shape[0], log_weights.shape[0])
   num_particles = log_weights.shape[0]
   
-  def eval_func(x):
-    log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply, flow_params, 
-                                                                 log_density, x, beta)
-    return log_conditional_ess(log_weights, log_weight_increment) - jnp.log(threshold*num_particles)
+  if embed_time:
+    def eval_func(x):
+      flow_apply_partial = jax.tree_util.Partial(flow_apply, beta=x, beta_prev=beta)
+      log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply_partial, 
+                                                                   flow_params, log_density, x, beta)
+      return log_conditional_ess(log_weights, log_weight_increment) - jnp.log(threshold*num_particles)
+    
+  else:
+    def eval_func(x):
+      log_weight_increment, _ = get_log_weight_increment_with_flow(samples, flow_apply, flow_params,
+                                                                   log_density, x, beta)
+      return log_conditional_ess(log_weights, log_weight_increment) - jnp.log(threshold*num_particles)
 
   bisection_step_partial = jax.tree_util.Partial(bisection_step, eval_func=eval_func)
   (_, beta_next), _ = jax.lax.scan(bisection_step_partial, (beta, 1.), None, num_search_iters)

@@ -13,7 +13,7 @@ def get_config():
   config.particle_dim = 2
   config.threshold = 0.3
   config.num_temps = 11
-  config.algo = 'smc'
+  config.algo = 'aft'
   config.report_interval = 1
   
   # optional
@@ -84,12 +84,18 @@ def get_config():
   ##############
   aft_config = ConfigDict()
 
-  aft_config.num_train_iters = 100
+  aft_config.num_train_iters = 1000
   aft_config.train_num_particles = 2000
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
   aft_config.embed_time = True
-  aft_config.refresh_opt_state = False
+  aft_config.refresh_opt_state = not aft_config.embed_time
+
+  # adaptive config
+  aft_config.adaptive = True
+  aft_config.adaptive_with_flow = True
+  aft_config.num_adaptive_search_iters = 50
+  aft_config.adaptive_threshold = 0.5
 
   config.aft_config = aft_config
 

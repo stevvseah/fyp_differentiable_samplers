@@ -254,7 +254,7 @@ def hmc_step(samples_in: jax.Array,
   chex.assert_shape(delta_log_prob, (num_batch,))
   is_accepted = jnp.greater(delta_log_prob, -1.*exponential_rvs)
   chex.assert_shape(is_accepted, (num_batch,))
-  step_acceptance_rate = jnp.mean(jnp.exp(delta_log_prob))
+  step_acceptance_rate = jnp.nanmean(jnp.exp(delta_log_prob))
   def acceptance(a, b):
     broadcast_axes = tuple(range(1, len(a.shape)))
     broadcast_is_accepted = jnp.expand_dims(is_accepted,

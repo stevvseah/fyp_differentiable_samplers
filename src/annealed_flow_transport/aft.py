@@ -10,6 +10,7 @@ from .utils.aft_types import InitialDensitySampler, LogDensityByTemp
 from .utils.hmc import HMCKernel
 from .utils.smc_utils import update_step_with_flow, estimate_free_energy
 from .utils.smc_utils import estimate_free_energy_with_time_embedding
+from .utils.smc_utils import adaptive_temp_search, adaptive_temp_search_with_flow
 
 class SamplesTuple(NamedTuple):
   """Container for the train, validation and test
@@ -576,3 +577,193 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
   train_loss_history = jnp.array(train_loss_history)
 
   return samples, log_weights, log_evidence, acpt_rate_history, val_loss_history, train_loss_history
+
+def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensitySampler, 
+                   train_sampler: InitialDensitySampler, kernel: HMCKernel, 
+                   flow_apply: Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+                   Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]], 
+                   params: dict, opt: optax.GradientTransformation, threshold: float, 
+                   num_train_iters: int, report_interval: int, embed_time: bool, 
+                   refresh_opt_state: bool, adaptive_with_flow: bool, num_search_iters: int, 
+                   adaptive_threshold: float) -> Tuple[jax.Array, jax.Array, float, jax.Array, 
+                                                       jax.Array, jax.Array, jax.Array]:
+  """Applies the AFT algorithm.
+  
+  Parameters
+  ----------
+  key : jax.Array
+    A jax PRNG key.
+  log_density : LogDensityByTemp
+    A function taking as input a temperature and the array of particles, 
+    returning the unnormalized density of the particles under the bridging 
+    distribution at the input temperature.
+  sampler : InitialDensitySampler
+    A callable that takes a jax PRNG key as input, and outputs an array of 
+    shape (num_particles, particle_dim) containing randomly generated 
+    particles under the initial distribution.
+  train_sampler : InitialDensitySampler
+    A callable that takes a jax PRNG key as input, and outputs an array of 
+    shape (num_train_particles, particle_dim) containing randomly generated 
+    particles used for training the normalizing flow. The distribution of 
+    this sampler should be the same as that of sampler.
+  kernel : HMCKernel
+    The HMC kernel to be used throughout the SMC algorithm.
+  flow_apply : Callable[[dict, jax.Array], Tuple[jax.Array, jax.Array]] | 
+               Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]]
+    A function that takes as input flow_params and samples to transport 
+    the input samples by the underlying flow model. If embed_time is true, 
+    then this function also takes the current and previous annealing 
+    temperatures as input.
+  params : dict
+    The initial parameters of the flow model of flow_apply.
+  opt : optax.GradientTransformation
+    The optimizer used to train the flow models.
+  threshold : float
+    The ESS threshold to trigger resampling.
+  num_train_iters : int
+    The number of iterations that the training loop should run for each 
+    annealing temperature.
+  report_interval : int
+    The number of temperatures before reporting training status again. 
+  embed_time : bool
+    A boolean that indicates whether to share parameters across 
+    the temperatures and embed the annealing temperature into 
+    the flow.
+  refresh_opt_state : bool
+    A boolean that indicates whether to refresh the optimization 
+    state after a training loop.
+  adaptive_with_flow : bool
+    A boolean that indicates whether to account for the flow in 
+    the adaptive selection of annealing temperature.
+  num_search_iters : int
+    The number of iterations to run the bisection method search for 
+    the next annealing temperature in the adaptive SMC algorithm.
+  adaptive_threshold : float
+    The target conditional effective sample size for the selection 
+    of the next annealing temperature.
+
+  Returns
+  -------
+  final_samples : jax.Array
+    An array of shape (num_particles, particle_dim) containing the 
+    final positions of the particles.
+  final_log_weights : jax.Array
+    An array of shape (num_particles,) containing the log weights of 
+    the particles in final_sample.
+  log_evidence_estimate : float
+    An estimate of the log evidence of the target density.
+  acpt_rate_history : jax.Array
+    An array of shape (num_temps-1,) containing the average acceptance 
+    rate of the HMC kernel for each temperature.
+  val_loss_history : jax.Array
+    An array containing the validation losses for the final parameters 
+    used the flow model for each temperature.
+  train_loss_history : jax.Array
+    An array containing the training losses for the training loops in 
+    each temperature.
+  beta_history : jax.Array
+    An array containing the annealing temperatures adaptively selected.
+  """
+  # initialize starting variables
+  key, key_ = jax.random.split(key)
+  samples_tuple, log_weights_tuple = initialize_particle_tuple(key_, sampler, train_sampler)
+
+  def loss_fn(samples, log_weights, flow_params, beta, beta_prev):
+    return estimate_free_energy(samples, log_weights, flow_apply, 
+                                flow_params, log_density, beta, 
+                                beta_prev, embed_time)
+  
+  loss_val_and_grad = jax.value_and_grad(loss_fn, argnums=2)
+
+  def specified_aft_step(key, samples_tuple, log_weights_tuple, beta, 
+                         beta_prev, params, opt_state, step):
+    return aft_step(key, samples_tuple, log_weights_tuple, beta, beta_prev, 
+                    flow_apply, params, kernel, log_density, step, threshold, 
+                    num_train_iters, opt_state, opt, loss_val_and_grad, embed_time)
+  
+  if adaptive_with_flow:
+    get_next_beta = jax.jit( jax.tree_util.Partial(adaptive_temp_search_with_flow,
+                                                   flow_apply=flow_apply, 
+                                                   log_density=log_density, 
+                                                   num_search_iters=num_search_iters, 
+                                                   threshold=adaptive_threshold, 
+                                                   embed_time=embed_time) )
+  else:
+    get_next_beta = jax.jit( jax.tree_util.Partial(adaptive_temp_search, 
+                                                   log_density=log_density, 
+                                                   num_search_iters=num_search_iters, 
+                                                   threshold=adaptive_threshold) )
+  
+  opt_state = opt.init(params)
+
+  # jit step
+  logging.info('Jitting step...')
+  jitted_aft_step = jax.jit( specified_aft_step )
+  logging.info('Performing initial step redundantly for accurate timing...')
+  initial_start_time = time()
+  jitted_aft_step(key_, samples_tuple, log_weights_tuple, 
+                  0.1, 0, params, opt_state, 1)
+  if adaptive_with_flow:
+    get_next_beta(samples=samples_tuple[-1], flow_params=params, 
+                  log_weights=log_weights_tuple[-1], beta=0.)
+  else:
+    get_next_beta(samples_tuple[-1], log_weights_tuple[-1], 0.)
+  initial_finish_time = time()
+  initial_time_diff = initial_finish_time - initial_start_time
+  logging.info(f'Initial step time / seconds: {initial_time_diff}')
+
+  # training step
+  beta = 0.
+  log_evidence = 0.
+  step = 0
+  acpt_rate_history = []
+  val_loss_history = []
+  train_loss_history = []
+  beta_history = []
+  logging.info('Launching training...')
+  start_time = time()
+  while beta < 1.:
+    key, key_ = jax.random.split(key)
+    step += 1
+    beta_prev = beta
+
+    if adaptive_with_flow:
+      beta = get_next_beta(samples=samples_tuple[-1], flow_params=params, 
+                          log_weights=log_weights_tuple[-1], beta=beta)
+    else:
+      beta = get_next_beta(samples_tuple[-1], log_weights_tuple[-1], beta)
+
+    samples_tuple, log_weights_tuple, log_evidence_increment, acpt_rate, \
+    best_val_loss, best_params, best_opt_state, train_loss = jitted_aft_step(key_, samples_tuple, 
+                                                                             log_weights_tuple, beta, 
+                                                                             beta_prev, params, 
+                                                                             opt_state, step)
+    
+    if embed_time:
+      params = best_params
+
+    if not refresh_opt_state:
+      opt_state = best_opt_state
+
+    log_evidence += log_evidence_increment
+    acpt_rate_history.append(acpt_rate)
+    val_loss_history.append(best_val_loss)
+    train_loss_history.append(train_loss)
+    beta_history.append(beta)
+    if step % report_interval == 0:
+      logging.info(f"Step {step:04d}: beta {beta:.5f} \t validation loss {best_val_loss:.5f} \t acceptance rate {acpt_rate:.5f}")
+  finish_time = time()
+  train_time_diff = finish_time - start_time
+
+  # end-of-training info dump
+  logging.info(f"Training time / seconds : {train_time_diff}")
+  logging.info(f"Log evidence estimate : {log_evidence}")
+
+  acpt_rate_history = jnp.array(acpt_rate_history)
+  samples = samples_tuple[-1]
+  log_weights = log_weights_tuple[-1]
+  val_loss_history = jnp.array(val_loss_history)
+  train_loss_history = jnp.array(train_loss_history)
+  beta_history = jnp.array(beta_history)
+
+  return samples, log_weights, log_evidence, acpt_rate_history, val_loss_history, train_loss_history, beta_history

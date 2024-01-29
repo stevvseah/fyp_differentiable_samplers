@@ -164,17 +164,34 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
 
     flow_apply = flow.apply
 
-    samples, log_weights, log_evidence, acpt_rate, \
-    val_loss_history, train_loss_history = aft.apply(key_, log_density, sampler, 
-                                                     train_sampler, kernel, 
-                                                     flow_apply, params, 
-                                                     opt, threshold, 
-                                                     aft_num_train_iters, 
-                                                     num_temps, betas, 
-                                                     report_interval, 
-                                                     embed_time, 
-                                                     refresh_opt_state)
-    misc = {'val_loss': val_loss_history, 'train_loss': train_loss_history}
+    if value_or_none('adaptive', config.aft_config):
+      num_search_iters = config.aft_config.num_adaptive_search_iters
+      adaptive_threshold = config.aft_config.adaptive_threshold
+      adaptive_with_flow = config.aft_config.adaptive_with_flow
+      samples, log_weights, log_evidence, acpt_rate, val_loss_history, \
+      train_loss_history, beta_history = aft.apply_adaptive(key_, log_density, sampler, 
+                                                            train_sampler, kernel, 
+                                                            flow_apply, params, opt, 
+                                                            threshold, aft_num_train_iters, 
+                                                            report_interval, embed_time, 
+                                                            refresh_opt_state, 
+                                                            adaptive_with_flow, 
+                                                            num_search_iters, 
+                                                            adaptive_threshold)
+      misc = {'val_loss': val_loss_history, 'train_loss': train_loss_history, 
+              'temperatures': beta_history}
+    else:
+      samples, log_weights, log_evidence, acpt_rate, \
+      val_loss_history, train_loss_history = aft.apply(key_, log_density, sampler, 
+                                                      train_sampler, kernel, 
+                                                      flow_apply, params, 
+                                                      opt, threshold, 
+                                                      aft_num_train_iters, 
+                                                      num_temps, betas, 
+                                                      report_interval, 
+                                                      embed_time, 
+                                                      refresh_opt_state)
+      misc = {'val_loss': val_loss_history, 'train_loss': train_loss_history}
 
   elif config.algo == 'craft':
 

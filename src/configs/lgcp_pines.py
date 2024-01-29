@@ -9,11 +9,11 @@ def get_config():
   # main config #
   ###############
   config.seed = 1
-  config.num_particles = 2000
+  config.num_particles = 200
   config.particle_dim = 1024
   config.threshold = 0.3
   config.num_temps = 6
-  config.algo = 'smc'
+  config.algo = 'aft'
   config.report_interval = 1
   
   # optional
@@ -63,7 +63,7 @@ def get_config():
   smc_config = ConfigDict()
 
   smc_config.adaptive = True
-  smc_config.num_adaptive_search_iters = 50
+  smc_config.num_adaptive_search_iters = 100
   smc_config.adaptive_threshold = 0.5
   
   config.smc_config = smc_config
@@ -73,11 +73,11 @@ def get_config():
   ###############
   flow_config = ConfigDict()
 
-  flow_config.type = 'RealNVP'
+  flow_config.type = 'DiagonalAffine'
   flow_config.num_coupling_layers = 2
   flow_config.num_hidden_layers_per_coupling = 1
   flow_config.hidden_layer_dim = 200
-  flow_config.time_dim = 8
+  flow_config.time_dim = 10
 
   config.flow_config = flow_config
 
@@ -87,11 +87,17 @@ def get_config():
   aft_config = ConfigDict()
 
   aft_config.num_train_iters = 100
-  aft_config.train_num_particles = 2000
+  aft_config.train_num_particles = 200
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
   aft_config.embed_time = True
-  aft_config.refresh_opt_state = True
+  aft_config.refresh_opt_state = not aft_config.embed_time
+
+  # adaptive config
+  aft_config.adaptive = True
+  aft_config.adaptive_with_flow = True
+  aft_config.num_adaptive_search_iters = 50
+  aft_config.adaptive_threshold = 0.3
 
   config.aft_config = aft_config
 

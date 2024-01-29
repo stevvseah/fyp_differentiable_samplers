@@ -268,12 +268,18 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
   samples = initial_sampler(key_)
   log_weights = -jnp.log(batch_size) * jnp.ones(batch_size)
 
+  get_next_beta = jax.jit( jax.tree_util.Partial(adaptive_temp_search, 
+                                                 log_density=log_density, 
+                                                 num_search_iters=num_search_iters, 
+                                                 threshold=adaptive_threshold) )
+
   # jit step
   logging.info('Jitting step...')
   smc_step = jax.jit( get_smc_step(kernel, log_density, threshold) )
   logging.info('Performing initial step redundantly for accurate timing...')
   initial_start_time = time()
   smc_step(key_, samples, log_weights, 0.1, 0, 1)
+  get_next_beta(samples, log_weights, 0.)
   initial_finish_time = time()
   initial_time_diff = initial_finish_time - initial_start_time
   logging.info(f'Initial step time / seconds: {initial_time_diff}')
@@ -290,8 +296,7 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
     key, key_ = jax.random.split(key)
     step += 1
     beta_prev = beta
-    beta = adaptive_temp_search(samples, log_weights, beta, log_density, 
-                                num_search_iters, adaptive_threshold)
+    beta = get_next_beta(samples, log_weights, beta)
     samples, log_weights, log_evidence_increment, acpt_rate = smc_step(key_, samples, 
                                                                        log_weights, beta, 
                                                                        beta_prev, step)
