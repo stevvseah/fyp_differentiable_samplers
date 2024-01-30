@@ -10,7 +10,7 @@ from .utils.aft_types import LogDensityByTemp
 from .utils.aft_types import InterpolatedStepSizeSchedule
 from .densities import NormalDistribution
 from .utils.hmc import HMCKernel
-from . import smc, aft, craft, vi
+from . import smc, aft, craft, vi, adaptive_craft
 
 def value_or_none(value: str, config: ConfigDict) -> Any:
   """Looks for a desired attribute in the input ConfigDict 
@@ -212,13 +212,41 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
 
     flow_apply = flow.apply
 
-    samples, log_weights, acpt_rate, log_evidence, \
-    train_loss_history, log_evidence_history = craft.apply(key_, sampler, flow_apply, 
-                                                           params, opt, log_density, 
-                                                           kernel, num_temps, threshold, 
-                                                           craft_num_train_iters, betas, 
-                                                           report_interval, embed_time)
-    misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history}
+    if value_or_none('adaptive', config.craft_config):
+      num_search_iters = config.craft_config.num_adaptive_search_iters
+      adaptive_threshold = config.craft_config.adaptive_threshold
+      max_adaptive_num_temps = config.craft_config.max_adaptive_num_temps
+      # train_loss_history, log_evidence_history, \
+      # beta_history, num_temps = adaptive_craft.apply(key_, sampler, flow_apply, 
+      #                                                params, opt, kernel, 
+      #                                                log_density, threshold, 
+      #                                                num_search_iters, 
+      #                                                adaptive_threshold, 
+      #                                                max_adaptive_num_temps, 
+      #                                                craft_num_train_iters, 
+      #                                                report_interval)
+      samples, log_weights, acpt_rate, log_evidence, \
+      train_loss_history, log_evidence_history, \
+      beta_history, num_temps = adaptive_craft.apply(key=key, sampler=sampler, 
+                                                     flow_apply=flow_apply, 
+                                                     params=params, opt=opt, 
+                                                     kernel=kernel, log_density=log_density, 
+                                                     threshold=threshold, 
+                                                     num_search_iters=num_search_iters, 
+                                                     adaptive_threshold=adaptive_threshold, 
+                                                     max_adaptive_num_temps=max_adaptive_num_temps, 
+                                                     num_train_iters=craft_num_train_iters, 
+                                                     report_interval=report_interval)
+      misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history, 
+              'temperatures': beta_history, 'num_temps': num_temps}
+    else:
+      samples, log_weights, acpt_rate, log_evidence, \
+      train_loss_history, log_evidence_history = craft.apply(key_, sampler, flow_apply, 
+                                                            params, opt, log_density, 
+                                                            kernel, num_temps, threshold, 
+                                                            craft_num_train_iters, betas, 
+                                                            report_interval, embed_time)
+      misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history}
 
   elif config.algo == 'vi':
     

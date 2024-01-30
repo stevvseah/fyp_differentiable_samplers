@@ -12,8 +12,8 @@ def get_config():
   config.num_particles = 200
   config.particle_dim = 1024
   config.threshold = 0.3
-  config.num_temps = 6
-  config.algo = 'aft'
+  config.num_temps = 11
+  config.algo = 'craft'
   config.report_interval = 1
   
   # optional
@@ -77,7 +77,7 @@ def get_config():
   flow_config.num_coupling_layers = 2
   flow_config.num_hidden_layers_per_coupling = 1
   flow_config.hidden_layer_dim = 200
-  flow_config.time_dim = 10
+  flow_config.time_dim = 8
 
   config.flow_config = flow_config
 
@@ -110,6 +110,12 @@ def get_config():
   craft_config.initial_learning_rate = 1e-3
   craft_config.boundaries_and_scales = ({80: 5e-4},)
   craft_config.embed_time = True
+
+  # adaptive config
+  craft_config.adaptive = True
+  craft_config.max_adaptive_num_temps = 11
+  craft_config.num_adaptive_search_iters = 50
+  craft_config.adaptive_threshold = 0.3
 
   config.craft_config = craft_config
 

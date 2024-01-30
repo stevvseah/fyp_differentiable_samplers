@@ -301,10 +301,20 @@ def time_embedded_craft_loop(key: jax.Array, sampler: InitialDensitySampler,
                                                                         per_step_input)
   log_evidence_estimate = jnp.sum(log_evidence_increments)
   total_vfe = jnp.sum(vfes)
-  total_grad = jax.tree_map(lambda x: jnp.sum(x, axis=0), vfe_grads)
 
+  total_grad = jax.tree_util.tree_map(lambda x: jnp.sum(x, axis=0), vfe_grads)
   updates, new_opt_state = opt.update(total_grad, opt_state)
   new_params = optax.apply_updates(params, updates)
+
+  # def update_params_step(state, grad):
+  #   params, opt_state = state
+  #   updates, new_opt_state = opt.update(grad, opt_state)
+  #   new_params = optax.apply_updates(params, updates)
+  #   return (new_params, new_opt_state), None
+
+  # (new_params, new_opt_state), _ = jax.lax.scan(update_params_step, 
+  #                                               (params, opt_state), 
+  #                                               vfe_grads)
 
   return final_samples, final_log_weights, acpt_rate, \
     new_params, new_opt_state, log_evidence_estimate, total_vfe

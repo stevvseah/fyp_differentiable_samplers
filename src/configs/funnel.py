@@ -8,7 +8,7 @@ def get_config():
   ###############
   # main config #
   ###############
-  config.seed = 3
+  config.seed = 5
   config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3
@@ -95,7 +95,7 @@ def get_config():
   aft_config = ConfigDict()
 
   aft_config.num_train_iters = 500
-  aft_config.train_num_particles = 6000
+  aft_config.train_num_particles = 2000
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
   aft_config.embed_time = True
@@ -115,10 +115,16 @@ def get_config():
   ################
   craft_config = ConfigDict()
 
-  craft_config.num_train_iters = 200
+  craft_config.num_train_iters = 50
   craft_config.initial_learning_rate = 1e-3
   craft_config.boundaries_and_scales = None
   craft_config.embed_time = True
+
+  # adaptive config
+  craft_config.adaptive = True
+  craft_config.max_adaptive_num_temps = 8
+  craft_config.num_adaptive_search_iters = 50
+  craft_config.adaptive_threshold = 0.5
 
   config.craft_config = craft_config
 

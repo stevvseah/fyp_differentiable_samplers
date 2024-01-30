@@ -12,8 +12,8 @@ def get_config():
   config.num_particles = 2000
   config.particle_dim = 2
   config.threshold = 0.3
-  config.num_temps = 11
-  config.algo = 'aft'
+  config.num_temps = 5
+  config.algo = 'craft'
   config.report_interval = 1
   
   # optional
@@ -108,6 +108,12 @@ def get_config():
   craft_config.initial_learning_rate = 1e-3
   craft_config.boundaries_and_scales = None
   craft_config.embed_time = True
+
+  # adaptive config
+  craft_config.adaptive = True
+  craft_config.max_adaptive_num_temps = 5
+  craft_config.num_adaptive_search_iters = 50
+  craft_config.adaptive_threshold = 0.5
 
   config.craft_config = craft_config
 
