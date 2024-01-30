@@ -8,7 +8,7 @@ def get_config():
   ###############
   # main config #
   ###############
-  config.seed = 5
+  config.seed = 1
   config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3
@@ -53,8 +53,8 @@ def get_config():
   kernel_config.step_size = 0.15
 
   # optional
-  kernel_config.interp_step_times = [0., 0.25, 0.5, 0.75, 1.]
-  kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
+  # kernel_config.interp_step_times = [0., 0.25, 0.5, 0.75, 1.]
+  # kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
 
   config.kernel_config = kernel_config
 
@@ -85,7 +85,7 @@ def get_config():
   flow_config.num_coupling_layers = 2
   flow_config.hidden_layer_dim = 10
   flow_config.num_hidden_layers_per_coupling = 2
-  flow_config.time_dim = 10
+  flow_config.time_dim = 8
 
   config.flow_config = flow_config
 
@@ -105,7 +105,7 @@ def get_config():
   aft_config.adaptive = True
   aft_config.adaptive_with_flow = True
   aft_config.num_adaptive_search_iters = 100
-  aft_config.adaptive_threshold = 0.5
+  aft_config.adaptive_threshold = 0.8
 
 
   config.aft_config = aft_config
@@ -124,7 +124,7 @@ def get_config():
   craft_config.adaptive = True
   craft_config.max_adaptive_num_temps = 8
   craft_config.num_adaptive_search_iters = 50
-  craft_config.adaptive_threshold = 0.5
+  craft_config.adaptive_threshold = 0.8
 
   config.craft_config = craft_config
 

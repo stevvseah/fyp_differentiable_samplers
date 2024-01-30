@@ -52,8 +52,8 @@ def get_config():
   kernel_config.step_size = 0.2
 
   # optional
-  kernel_config.interp_step_times = [0., 0.25, 0.5, 1.]
-  kernel_config.interp_step_sizes = [0.3, 0.3, 0.2, 0.2]
+  # kernel_config.interp_step_times = [0., 0.25, 0.5, 1.]
+  # kernel_config.interp_step_sizes = [0.3, 0.3, 0.2, 0.2]
 
   config.kernel_config = kernel_config
 
@@ -106,7 +106,7 @@ def get_config():
   ################
   craft_config = ConfigDict()
 
-  craft_config.num_train_iters = 100
+  craft_config.num_train_iters = 60
   craft_config.initial_learning_rate = 1e-3
   craft_config.boundaries_and_scales = ({80: 5e-4},)
   craft_config.embed_time = True
