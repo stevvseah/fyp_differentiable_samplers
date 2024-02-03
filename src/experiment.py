@@ -19,7 +19,7 @@ def main(argv: Sequence[str]) -> None:
     results = train.sample(config)
     with open(config.save_results_path, 'a', newline='') as f:
       writer = csv.writer(f)
-      writer.writerow([results[0]])
+      writer.writerow(results[:2])
     config.seed += 1
 
 if __name__ == '__main__':

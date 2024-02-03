@@ -80,6 +80,8 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
   -------
   log_evidence : float
     The log evidence estimate produced from the sampler.
+  sampling_time : float
+    The time taken to perform sampling.
   main_output : dict
     A dictionary containing the produced samples, their 
     log weights, and the acceptance rate history of the 
@@ -131,15 +133,15 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
       num_search_iters = config.smc_config.num_adaptive_search_iters
       adaptive_threshold = config.smc_config.adaptive_threshold
       samples, log_weights, log_evidence, \
-      acpt_rate, beta_history = smc.apply_adaptive(key_, log_density, sampler, kernel, 
-                                                   threshold, report_interval, 
-                                                   num_search_iters, adaptive_threshold)
+      acpt_rate, beta_history, sampling_time = smc.apply_adaptive(key_, log_density, sampler, kernel, 
+                                                                  threshold, report_interval, 
+                                                                  num_search_iters, adaptive_threshold)
       misc = {'temperatures': beta_history}
     else:
-      samples, log_weights, log_evidence, acpt_rate = smc.apply(key_, log_density, 
-                                                                sampler, kernel, 
-                                                                threshold, num_temps, 
-                                                                betas, report_interval)
+      samples, log_weights, log_evidence, acpt_rate, sampling_time = smc.apply(key_, log_density, 
+                                                                               sampler, kernel, 
+                                                                               threshold, num_temps, 
+                                                                               betas, report_interval)
       misc = {}
   
   elif config.algo == 'aft':
@@ -169,28 +171,28 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
       adaptive_threshold = config.aft_config.adaptive_threshold
       adaptive_with_flow = config.aft_config.adaptive_with_flow
       samples, log_weights, log_evidence, acpt_rate, val_loss_history, \
-      train_loss_history, beta_history = aft.apply_adaptive(key_, log_density, sampler, 
-                                                            train_sampler, kernel, 
-                                                            flow_apply, params, opt, 
-                                                            threshold, aft_num_train_iters, 
-                                                            report_interval, embed_time, 
-                                                            refresh_opt_state, 
-                                                            adaptive_with_flow, 
-                                                            num_search_iters, 
-                                                            adaptive_threshold)
+      train_loss_history, beta_history, sampling_time = aft.apply_adaptive(key_, log_density, sampler, 
+                                                                           train_sampler, kernel, 
+                                                                           flow_apply, params, opt, 
+                                                                           threshold, aft_num_train_iters, 
+                                                                           report_interval, embed_time, 
+                                                                           refresh_opt_state, 
+                                                                           adaptive_with_flow, 
+                                                                           num_search_iters, 
+                                                                           adaptive_threshold)
       misc = {'val_loss': val_loss_history, 'train_loss': train_loss_history, 
               'temperatures': beta_history}
     else:
       samples, log_weights, log_evidence, acpt_rate, \
-      val_loss_history, train_loss_history = aft.apply(key_, log_density, sampler, 
-                                                      train_sampler, kernel, 
-                                                      flow_apply, params, 
-                                                      opt, threshold, 
-                                                      aft_num_train_iters, 
-                                                      num_temps, betas, 
-                                                      report_interval, 
-                                                      embed_time, 
-                                                      refresh_opt_state)
+      val_loss_history, train_loss_history, sampling_time = aft.apply(key_, log_density, sampler, 
+                                                                      train_sampler, kernel, 
+                                                                      flow_apply, params, 
+                                                                      opt, threshold, 
+                                                                      aft_num_train_iters, 
+                                                                      num_temps, betas, 
+                                                                      report_interval, 
+                                                                      embed_time, 
+                                                                      refresh_opt_state)
       misc = {'val_loss': val_loss_history, 'train_loss': train_loss_history}
 
   elif config.algo == 'craft':
@@ -216,36 +218,25 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
       num_search_iters = config.craft_config.num_adaptive_search_iters
       adaptive_threshold = config.craft_config.adaptive_threshold
       max_adaptive_num_temps = config.craft_config.max_adaptive_num_temps
-      # train_loss_history, log_evidence_history, \
-      # beta_history, num_temps = adaptive_craft.apply(key_, sampler, flow_apply, 
-      #                                                params, opt, kernel, 
-      #                                                log_density, threshold, 
-      #                                                num_search_iters, 
-      #                                                adaptive_threshold, 
-      #                                                max_adaptive_num_temps, 
-      #                                                craft_num_train_iters, 
-      #                                                report_interval)
       samples, log_weights, acpt_rate, log_evidence, \
       train_loss_history, log_evidence_history, \
-      beta_history, num_temps = adaptive_craft.apply(key=key, sampler=sampler, 
-                                                     flow_apply=flow_apply, 
-                                                     params=params, opt=opt, 
-                                                     kernel=kernel, log_density=log_density, 
-                                                     threshold=threshold, 
-                                                     num_search_iters=num_search_iters, 
-                                                     adaptive_threshold=adaptive_threshold, 
-                                                     max_adaptive_num_temps=max_adaptive_num_temps, 
-                                                     num_train_iters=craft_num_train_iters, 
-                                                     report_interval=report_interval)
+      beta_history, num_temps, sampling_time = adaptive_craft.apply(key_, sampler, flow_apply, 
+                                                                    params, opt, kernel, 
+                                                                    log_density, threshold, 
+                                                                    num_search_iters, 
+                                                                    adaptive_threshold, 
+                                                                    max_adaptive_num_temps, 
+                                                                    craft_num_train_iters, 
+                                                                    report_interval)
       misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history, 
               'temperatures': beta_history, 'num_temps': num_temps}
     else:
       samples, log_weights, acpt_rate, log_evidence, \
-      train_loss_history, log_evidence_history = craft.apply(key_, sampler, flow_apply, 
-                                                            params, opt, log_density, 
-                                                            kernel, num_temps, threshold, 
-                                                            craft_num_train_iters, betas, 
-                                                            report_interval, embed_time)
+      train_loss_history, log_evidence_history, sampling_time = craft.apply(key_, sampler, flow_apply, 
+                                                                            params, opt, log_density, 
+                                                                            kernel, num_temps, threshold, 
+                                                                            craft_num_train_iters, betas, 
+                                                                            report_interval, embed_time)
       misc = {'train_loss': train_loss_history, 'evidence_hist': log_evidence_history}
 
   elif config.algo == 'vi':
@@ -271,11 +262,11 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
 
     for beta_prev, beta in config.vi_config.beta_list:
       samples, log_weights, log_evidence, vfe_history, \
-      log_evidence_history, params, opt_state = vi.apply(key_, params, beta, beta_prev, 
-                                                         opt_state, opt, sampler, 
-                                                         log_density, flow_apply, 
-                                                         embed_time, vi_num_train_iters, 
-                                                         report_interval)
+      log_evidence_history, params, opt_state, sampling_time = vi.apply(key_, params, beta, beta_prev, 
+                                                                        opt_state, opt, sampler, 
+                                                                        log_density, flow_apply, 
+                                                                        embed_time, vi_num_train_iters, 
+                                                                        report_interval)
     acpt_rate = None
     misc = {'vfe_history': vfe_history, 'evidence_hist': log_evidence_history, 
               'params': params, 'opt_state': opt_state}
@@ -285,4 +276,4 @@ def sample(config: ConfigDict) -> Tuple[float, dict, dict]:
   
   main_output = {'samples': samples, 'log_weights': log_weights, 'acpt_rate': acpt_rate}
 
-  return log_evidence, main_output, misc
+  return log_evidence, sampling_time, main_output, misc

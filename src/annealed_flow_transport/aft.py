@@ -428,7 +428,7 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
           params: dict, opt: optax.GradientTransformation, threshold: float,
           num_train_iters: int, num_temps: int, betas: jax.Array | None, 
           report_interval: int, embed_time: bool, refresh_opt_state: bool
-          ) -> Tuple[jax.Array, jax.Array, float, jax.Array, jax.Array, jax.Array]:
+          ) -> Tuple[jax.Array, jax.Array, float, jax.Array, jax.Array, jax.Array, float]:
   """Applies the AFT algorithm.
   
   Parameters
@@ -500,6 +500,9 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
   train_loss_history : jax.Array
     An array containing the training losses for the training loops in 
     each temperature.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
   # initialize starting variables
   key, key_ = jax.random.split(key)
@@ -576,7 +579,7 @@ def apply(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensity
   val_loss_history = jnp.array(val_loss_history)
   train_loss_history = jnp.array(train_loss_history)
 
-  return samples, log_weights, log_evidence, acpt_rate_history, val_loss_history, train_loss_history
+  return samples, log_weights, log_evidence, acpt_rate_history, val_loss_history, train_loss_history, train_time_diff
 
 def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, sampler: InitialDensitySampler, 
                    train_sampler: InitialDensitySampler, kernel: HMCKernel, 
@@ -586,7 +589,7 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, sampler: Initi
                    num_train_iters: int, report_interval: int, embed_time: bool, 
                    refresh_opt_state: bool, adaptive_with_flow: bool, num_search_iters: int, 
                    adaptive_threshold: float) -> Tuple[jax.Array, jax.Array, float, jax.Array, 
-                                                       jax.Array, jax.Array, jax.Array]:
+                                                       jax.Array, jax.Array, jax.Array, float]:
   """Applies the AFT algorithm.
   
   Parameters
@@ -663,6 +666,9 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, sampler: Initi
     each temperature.
   beta_history : jax.Array
     An array containing the annealing temperatures adaptively selected.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
   # initialize starting variables
   key, key_ = jax.random.split(key)
@@ -766,4 +772,4 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, sampler: Initi
   train_loss_history = jnp.array(train_loss_history)
   beta_history = jnp.array(beta_history)
 
-  return samples, log_weights, log_evidence, acpt_rate_history, val_loss_history, train_loss_history, beta_history
+  return samples, log_weights, log_evidence, acpt_rate_history, val_loss_history, train_loss_history, beta_history, train_time_diff

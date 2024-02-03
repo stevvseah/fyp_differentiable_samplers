@@ -168,7 +168,7 @@ def apply(key: jax.Array, params: dict, beta: float, beta_prev: float,
           Callable[[dict, jax.Array, float, float], Tuple[jax.Array, jax.Array]], 
           embed_time: bool, num_train_iters: int, report_interval: int
           ) -> Tuple[jax.Array, jax.Array, float, jax.Array, 
-                     jax.Array, dict, optax.OptState]:
+                     jax.Array, dict, optax.OptState, float]:
   """Performs variational inference with normalizing flow.
 
   Parameters
@@ -232,6 +232,9 @@ def apply(key: jax.Array, params: dict, beta: float, beta_prev: float,
     The final parameters of the flow.
   opt_state : optax.OptState
     The final optimization state of the flow.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
   loss_val_and_grad = get_vfe_grad_function(initial_sampler, log_density, 
                                             flow_apply, embed_time)
@@ -284,4 +287,4 @@ def apply(key: jax.Array, params: dict, beta: float, beta_prev: float,
   log_evidence_history = jnp.array(log_evidence_history)
 
   return transformed_samples, log_importance_weights, log_evidence, \
-         vfe_history, log_evidence_history, params, opt_state
+         vfe_history, log_evidence_history, params, opt_state, train_time_diff

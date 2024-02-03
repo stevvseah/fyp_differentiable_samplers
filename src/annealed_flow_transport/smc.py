@@ -122,7 +122,7 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
               kernel: HMCKernel, threshold: float, 
               num_temps: int, betas: jax.Array | None, 
               report_interval: int
-              ) -> Tuple[jax.Array, jax.Array, float, jax.Array]:
+              ) -> Tuple[jax.Array, jax.Array, float, jax.Array, float]:
   """Applies the SMC algorithm.
 
   Parameters
@@ -163,6 +163,9 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
   acpt_rate_history : jax.Array
     An array of shape (num_temps-1,) containing the average acceptance 
     rate of the HMC kernel for each temperature.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
 
   # initialize starting variables
@@ -209,7 +212,7 @@ def apply(key: jax.Array, log_density: LogDensityByTemp,
 
   acpt_rate_history = jnp.array(acpt_rate_history)
 
-  return samples, log_weights, log_evidence, acpt_rate_history
+  return samples, log_weights, log_evidence, acpt_rate_history, train_time_diff
 
 def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp, 
                    initial_sampler: InitialDensitySampler, 
@@ -217,7 +220,7 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
                    report_interval: int, num_search_iters: int, 
                    adaptive_threshold: float
                    ) -> Tuple[jax.Array, jax.Array, float, 
-                              jax.Array, jax.Array]:
+                              jax.Array, jax.Array, float]:
   """Applies an adaptive variant of SMC algorithm.
 
   Parameters
@@ -260,6 +263,9 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
     rate of the HMC kernel for each temperature.
   beta_history : jax.Array
     An array containing the annealing temperatures adaptively selected.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
 
   # initialize starting variables
@@ -315,4 +321,4 @@ def apply_adaptive(key: jax.Array, log_density: LogDensityByTemp,
   acpt_rate_history = jnp.array(acpt_rate_history)
   beta_history = jnp.array(beta_history)
 
-  return samples, log_weights, log_evidence, acpt_rate_history, beta_history
+  return samples, log_weights, log_evidence, acpt_rate_history, beta_history, train_time_diff

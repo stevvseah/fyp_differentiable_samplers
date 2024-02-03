@@ -430,7 +430,7 @@ def apply(key: jax.Array, sampler: InitialDensitySampler,
           report_interval: int,
           embed_time: bool
           ) -> Tuple[jax.Array, jax.Array, jax.Array, 
-                     float, jax.Array, jax.Array]:
+                     float, jax.Array, jax.Array, float]:
   """Applies the CRAFT algorithm.
 
   Parameters
@@ -494,6 +494,9 @@ def apply(key: jax.Array, sampler: InitialDensitySampler,
   log_evidence_history : jax.Array
     An array recording the log evidence estimate obtained through 
     each run of CRAFT.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
   # initialize starting variables
   key, key_ = jax.random.split(key)
@@ -553,4 +556,4 @@ def apply(key: jax.Array, sampler: InitialDensitySampler,
   log_evidence_history = jnp.array(log_evidence_history)
 
   return final_samples, final_log_weights, acpt_rate, \
-         log_evidence, vfe_history, log_evidence_history
+         log_evidence, vfe_history, log_evidence_history, train_time_diff

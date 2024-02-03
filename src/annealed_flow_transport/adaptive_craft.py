@@ -260,7 +260,7 @@ def apply(key: jax.Array, sampler: InitialDensitySampler,
           adaptive_threshold: float, max_adaptive_num_temps: int, 
           num_train_iters: int, report_interval: int
           ) -> Tuple[jax.Array, jax.Array, jax.Array, float, 
-                     jax.Array, jax.Array, jax.Array, int]:
+                     jax.Array, jax.Array, jax.Array, int, float]:
   """Applies the adaptive CRAFT algorithm.
 
   Parameters
@@ -326,6 +326,9 @@ def apply(key: jax.Array, sampler: InitialDensitySampler,
   final_step : int
     The final time step index where the algorithm was actually training. 
     This can be useful for tuning max_adaptive_num_temps and adaptive_threshold.
+  train_time_diff : float
+    The time taken to perform sampling (without time spent on jit 
+    compilation).
   """
   # initialize starting variables
   key, key_ = jax.random.split(key)
@@ -379,4 +382,4 @@ num steps {final_step}")
   log_evidence_history = jnp.array(log_evidence_history)
 
   return final_samples, final_log_weights, acpt_rate, log_evidence, \
-         vfe_history, log_evidence_history, betas, final_step
+         vfe_history, log_evidence_history, betas, final_step, train_time_diff
