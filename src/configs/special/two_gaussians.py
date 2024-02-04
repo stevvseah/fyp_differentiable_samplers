@@ -10,7 +10,7 @@ def get_config():
   # main config #
   ###############
   config.seed = 1
-  config.save_plot = False
+  config.save_plot = True
   config.save_plot_path = 'images/time_embedding_example'
   config.num_particles = 2000
   config.particle_dim = 2
@@ -46,7 +46,7 @@ def get_config():
   vi_config.num_train_iters = 5
   vi_config.initial_learning_rate = 1e-1
   vi_config.boundaries_and_scales = None
-  vi_config.beta_list = [[0., 0.5], [0., 1.]] * 100
+  vi_config.beta_list = [[0., 0.5], [0., 1.]] * 10
   vi_config.embed_time = True
 
   config.vi_config = vi_config

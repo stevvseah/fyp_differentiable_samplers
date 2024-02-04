@@ -18,7 +18,7 @@ def main(argv: Sequence[str]) -> None:
   config = FLAGS.config
   if len(argv) > 1:
     raise app.UsageError('Too many command line arguments.')
-  log_evidence, main_output, misc = sample(config)
+  log_evidence, sampling_time, main_output, misc = sample(config)
 
   # generate plot of particles
   flow = getattr(flows, 'TimeEmbedded' + config.flow_config.type)(config)

@@ -107,11 +107,11 @@ class TimeEmbeddedDiagonalAffine(nn.Module):
     i = i.at[1::2].add(-1)
     i /= self.time_embedding_dim
     
-    embd_beta = beta / ( 1000**i )
+    embd_beta = 10*beta / ( 10000**i )
     embd_beta = embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
     embd_beta = embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
 
-    embd_beta_prev = beta_prev / ( 1000**i )
+    embd_beta_prev = 10*beta_prev / ( 10000**i )
     embd_beta_prev = embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
     embd_beta_prev = embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
 
@@ -410,11 +410,11 @@ class UnbatchedTimeEmbeddedAffineCouplingLayer(nn.Module):
     i = i.at[1::2].add(-1)
     i /= self.time_embedding_dim
     
-    embd_beta = beta / ( 1000**i )
+    embd_beta = 10*beta / ( 10000**i )
     embd_beta = embd_beta.at[::2].set(jnp.sin(embd_beta[::2]))
     embd_beta = embd_beta.at[1::2].set(jnp.cos(embd_beta[1::2]))
 
-    embd_beta_prev = beta_prev / ( 1000**i )
+    embd_beta_prev = 10*beta_prev / ( 10000**i )
     embd_beta_prev = embd_beta_prev.at[::2].set(jnp.sin(embd_beta_prev[::2]))
     embd_beta_prev = embd_beta_prev.at[1::2].set(jnp.cos(embd_beta_prev[1::2]))
 
