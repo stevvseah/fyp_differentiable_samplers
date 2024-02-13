@@ -117,7 +117,8 @@ def sample(config: ConfigDict) -> Tuple[float, float, dict, dict]:
   if config.algo != 'vi':
     num_leapfrog_iters = config.kernel_config.num_leapfrog_iters
     num_hmc_iters = config.kernel_config.num_hmc_iters
-    if hasattr(config, 'interp_step_times') and hasattr(config, 'interp_step_sizes'):
+    if hasattr(config.kernel_config, 'interp_step_times') \
+      and hasattr(config.kernel_config, 'interp_step_sizes'):
       epsilon = InterpolatedStepSizeSchedule(config.kernel_config.interp_step_times,  
                                             config.kernel_config.interp_step_sizes, 
                                             num_temps)

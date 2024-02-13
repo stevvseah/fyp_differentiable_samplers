@@ -19,7 +19,11 @@ def main(argv: Sequence[str]) -> None:
     results = train.sample(config)
     with open(config.save_results_path, 'a', newline='') as f:
       writer = csv.writer(f)
-      writer.writerow(results[:2])
+      if 'temperatures' not in results[-1]:
+        writer.writerow(results[:2])
+      else:
+        writer.writerow([results[0], results[1], 
+                         len(results[-1]['temperatures'])])
     config.seed += 1
 
 if __name__ == '__main__':
