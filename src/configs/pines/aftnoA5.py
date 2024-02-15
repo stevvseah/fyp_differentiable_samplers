@@ -53,11 +53,11 @@ def get_config():
 
   kernel_config.num_leapfrog_iters = 10
   kernel_config.num_hmc_iters = 1
-  kernel_config.step_size = 0.2
+  kernel_config.step_size = None
 
   # optional
-  # kernel_config.interp_step_times = [0., 0.25, 0.5, 1.]
-  # kernel_config.interp_step_sizes = [0.3, 0.3, 0.2, 0.2]
+  kernel_config.interp_step_times = [0., 0.25, 0.5, 1.]
+  kernel_config.interp_step_sizes = [0.3, 0.3, 0.2, 0.2]
 
   config.kernel_config = kernel_config
 

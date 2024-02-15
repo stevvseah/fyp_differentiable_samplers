@@ -12,8 +12,8 @@ def get_config():
   config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3
-  config.num_temps = 4
-  config.algo = 'aft'
+  config.num_temps = None
+  config.algo = 'smc'
   config.report_interval = 1
   
   # optional
@@ -50,11 +50,11 @@ def get_config():
 
   kernel_config.num_leapfrog_iters = 10
   kernel_config.num_hmc_iters = 1
-  kernel_config.step_size = 0.15
+  kernel_config.step_size = None
 
   # optional
-  # kernel_config.interp_step_times = [0., 0.25, 0.5, 0.75, 1.]
-  # kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
+  kernel_config.interp_step_times = [0., 0.25, 0.5, 0.75, 1.]
+  kernel_config.interp_step_sizes = [0.9, 0.7, 0.6, 0.5, 0.4]
 
   config.kernel_config = kernel_config
 
@@ -64,8 +64,8 @@ def get_config():
   smc_config = ConfigDict()
 
   smc_config.adaptive = True
-  smc_config.num_adaptive_search_iters = 50
-  smc_config.adaptive_threshold = 0.8
+  smc_config.num_adaptive_search_iters = 8
+  smc_config.adaptive_threshold = 0.95
   
   config.smc_config = smc_config
 
@@ -94,8 +94,8 @@ def get_config():
   ##############
   aft_config = ConfigDict()
 
-  aft_config.num_train_iters = 500
-  aft_config.train_num_particles = 2000
+  aft_config.num_train_iters = 1000
+  aft_config.train_num_particles = 1000
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
   aft_config.embed_time = True
@@ -104,8 +104,8 @@ def get_config():
   # adaptive config
   aft_config.adaptive = True
   aft_config.adaptive_with_flow = True
-  aft_config.num_adaptive_search_iters = 100
-  aft_config.adaptive_threshold = 0.8
+  aft_config.num_adaptive_search_iters = 8
+  aft_config.adaptive_threshold = 0.9
 
 
   config.aft_config = aft_config

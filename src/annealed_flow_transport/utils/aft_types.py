@@ -98,19 +98,21 @@ class InterpolatedStepSizeSchedule(StepSizeSchedule):
     self.interp_step_sizes = interp_step_sizes
     self.num_temps = num_temps
 
-  def __call__(self, step:int) -> float:
+  def __call__(self, beta:int) -> float:
     """Function to return an interpolated step size, given the 
     current step index.
     
     Parameters
     ----------
-    step : int
-      The current iteration step index.
+    beta : float
+      The current annealing temperature.
+
+    Returns
+    -------
     step_size : float
       the appropriate interpolated step size for the input step
       index.
     """
-    beta = step/(self.num_temps-1)
     step_size = jnp.interp(beta, 
                            jnp.array(self.interp_step_times), 
                            jnp.array(self.interp_step_sizes))

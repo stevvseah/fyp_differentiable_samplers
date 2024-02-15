@@ -433,7 +433,7 @@ class HMCKernel:
       Average acceptance rate of all HMC moves in this batch of 
       particles.
     """
-    step_size = self.epsilon(step)
+    step_size = self.epsilon(beta)
     samples_out, acceptance_rate = hmc_wrapped(samples, key, step_size, 
                                           self.log_density_by_temp, 
                                           beta, self.num_leapfrog_iters, 
