@@ -76,7 +76,7 @@ def get_config():
   ##############
   aft_config = ConfigDict()
 
-  aft_config.num_train_iters = 1000
+  aft_config.num_train_iters = 2000
   aft_config.train_num_particles = 1000
   aft_config.initial_learning_rate = 1e-3
   aft_config.boundaries_and_scales = None
