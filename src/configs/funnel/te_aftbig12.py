@@ -8,12 +8,12 @@ def get_config():
   ###############
   # main config #
   ###############
-  config.seed = 1
+  config.seed = 2024
   config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3
-  config.num_temps = 2
-  config.algo = 'craft'
+  config.num_temps = 13
+  config.algo = 'aft'
   config.report_interval = 1
   
   # optional
@@ -21,7 +21,7 @@ def get_config():
 
   # for running on experiment.py
   config.repetitions = 200
-  config.save_results_path = 'results/funnel_craft1.csv'
+  config.save_results_path = 'results/funnel_te_aftbig12.csv'
 
   ##########################
   # initial density config #
@@ -71,17 +71,19 @@ def get_config():
 
   config.flow_config = flow_config
 
-  ################
-  # craft config #
-  ################
-  craft_config = ConfigDict()
+  ##############
+  # aft config #
+  ##############
+  aft_config = ConfigDict()
 
-  craft_config.num_train_iters = 200
-  craft_config.initial_learning_rate = 1e-3
-  craft_config.boundaries_and_scales = None
-  craft_config.embed_time = False
+  aft_config.num_train_iters = 2000
+  aft_config.train_num_particles = 1000
+  aft_config.initial_learning_rate = 1e-3
+  aft_config.boundaries_and_scales = None
+  aft_config.embed_time = True
+  aft_config.refresh_opt_state = not aft_config.embed_time
 
-  config.craft_config = craft_config
+  config.aft_config = aft_config
 
   #~~~~~~~~~~~~~~~~~~~~#
   # end of config dict #

@@ -9,11 +9,11 @@ def get_config():
   # main config #
   ###############
   config.seed = 1
-  config.num_particles = 24000
+  config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3
-  config.num_temps = 2
-  config.algo = 'smc'
+  config.num_temps = 13
+  config.algo = 'aft'
   config.report_interval = 1
   
   # optional
@@ -21,7 +21,7 @@ def get_config():
 
   # for running on experiment.py
   config.repetitions = 200
-  config.save_results_path = 'results/funnel_smcbig1.csv'
+  config.save_results_path = 'results/funnel_aft12.csv'
 
   ##########################
   # initial density config #
@@ -58,12 +58,32 @@ def get_config():
 
   config.kernel_config = kernel_config
 
+  ###############
+  # flow config #
+  ###############
+  flow_config = ConfigDict()
+
+  flow_config.type = 'RealNVP'
+  flow_config.num_coupling_layers = 2
+  flow_config.hidden_layer_dim = 10
+  flow_config.num_hidden_layers_per_coupling = 2
+  flow_config.time_dim = 8
+
+  config.flow_config = flow_config
+
   ##############
-  # smc config #
+  # aft config #
   ##############
-  smc_config = ConfigDict()
-  
-  config.smc_config = smc_config
+  aft_config = ConfigDict()
+
+  aft_config.num_train_iters = 200
+  aft_config.train_num_particles = 1000
+  aft_config.initial_learning_rate = 1e-3
+  aft_config.boundaries_and_scales = None
+  aft_config.embed_time = False
+  aft_config.refresh_opt_state = not aft_config.embed_time
+
+  config.aft_config = aft_config
 
   #~~~~~~~~~~~~~~~~~~~~#
   # end of config dict #

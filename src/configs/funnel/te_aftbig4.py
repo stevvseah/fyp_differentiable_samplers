@@ -8,7 +8,7 @@ def get_config():
   ###############
   # main config #
   ###############
-  config.seed = 1
+  config.seed = 2024
   config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3

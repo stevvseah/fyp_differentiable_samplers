@@ -12,7 +12,7 @@ def get_config():
   config.num_particles = 2000
   config.particle_dim = 10
   config.threshold = 0.3
-  config.num_temps = 2
+  config.num_temps = 13
   config.algo = 'aft'
   config.report_interval = 1
   
@@ -21,7 +21,7 @@ def get_config():
 
   # for running on experiment.py
   config.repetitions = 200
-  config.save_results_path = 'results/funnel_te_aft1.csv'
+  config.save_results_path = 'results/funnel_te_aft12.csv'
 
   ##########################
   # initial density config #
